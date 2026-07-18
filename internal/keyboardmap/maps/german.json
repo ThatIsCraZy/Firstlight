@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "german",
+  "displayName": "German",
+  "sourceLocale": "de-DE",
+  "targetLocale": "en-US",
+  "extends": "us-base",
+  "physical": [
+    { "input": "1", "plain": { "key": "DIGIT_1" }, "shift": { "key": "DIGIT_1", "modifiers": ["left_shift"] } },
+    { "input": "2", "plain": { "key": "DIGIT_2" }, "shift": { "key": "APOSTROPHE", "modifiers": ["left_shift"] } },
+    { "input": "3", "plain": { "key": "DIGIT_3" }, "shift": { "key": "DIGIT_3" } },
+    { "input": "4", "plain": { "key": "DIGIT_4" }, "shift": { "key": "DIGIT_4", "modifiers": ["left_shift"] } },
+    { "input": "5", "plain": { "key": "DIGIT_5" }, "shift": { "key": "DIGIT_5", "modifiers": ["left_shift"] } },
+    { "input": "6", "plain": { "key": "DIGIT_6" }, "shift": { "key": "DIGIT_7", "modifiers": ["left_shift"] } },
+    { "input": "7", "plain": { "key": "DIGIT_7" }, "shift": { "key": "SLASH" }, "altGr": { "key": "LEFT_BRACKET", "modifiers": ["left_shift"] } },
+    { "input": "8", "plain": { "key": "DIGIT_8" }, "shift": { "key": "DIGIT_9", "modifiers": ["left_shift"] }, "altGr": { "key": "LEFT_BRACKET" } },
+    { "input": "9", "plain": { "key": "DIGIT_9" }, "shift": { "key": "DIGIT_0", "modifiers": ["left_shift"] }, "altGr": { "key": "RIGHT_BRACKET" } },
+    { "input": "0", "plain": { "key": "DIGIT_0" }, "shift": { "key": "EQUAL" }, "altGr": { "key": "RIGHT_BRACKET", "modifiers": ["left_shift"] } },
+    { "input": "Q", "altGr": { "key": "DIGIT_2", "modifiers": ["left_shift"] } },
+    { "input": "OEM_MINUS", "shift": { "key": "MINUS", "modifiers": ["left_shift"] }, "altGr": { "key": "BACKSLASH" } },
+    { "input": "OEM_PLUS", "plain": { "key": "EQUAL", "modifiers": ["left_shift"] }, "shift": { "key": "DIGIT_8", "modifiers": ["left_shift"] }, "altGr": { "key": "GRAVE", "modifiers": ["left_shift"] } },
+    { "input": "OEM_4", "plain": { "suppress": true }, "shift": { "key": "SLASH", "modifiers": ["left_shift"] }, "altGr": { "key": "BACKSLASH" } },
+    { "input": "OEM_6", "plain": { "suppress": true }, "shift": { "key": "GRAVE" }, "altGr": { "key": "GRAVE", "modifiers": ["left_shift"] } },
+    { "input": "OEM_5", "plain": { "key": "DIGIT_3", "modifiers": ["left_shift"] }, "shift": { "key": "APOSTROPHE" } },
+    { "input": "OEM_2", "plain": { "key": "DIGIT_3", "modifiers": ["left_shift"] }, "shift": { "key": "APOSTROPHE" } },
+    { "input": "OEM_COMMA", "plain": { "key": "COMMA" }, "shift": { "key": "SEMICOLON" } },
+    { "input": "OEM_PERIOD", "plain": { "key": "PERIOD" }, "shift": { "key": "SEMICOLON", "modifiers": ["left_shift"] } },
+    { "input": "OEM_102", "plain": { "key": "COMMA", "modifiers": ["left_shift"] }, "shift": { "key": "PERIOD", "modifiers": ["left_shift"] }, "altGr": { "key": "BACKSLASH", "modifiers": ["left_shift"] } }
+  ],
+  "text": []
+}

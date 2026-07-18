@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hpeirc.local/schemas/keyboard-map-v1.json",
+  "title": "hpeirc keyboard map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "displayName", "sourceLocale", "targetLocale", "physical", "text"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "displayName": { "type": "string", "minLength": 1 },
+    "sourceLocale": { "type": "string", "minLength": 1 },
+    "targetLocale": { "const": "en-US" },
+    "extends": { "type": "string" },
+    "selectable": { "type": "boolean" },
+    "physical": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["input"],
+        "properties": {
+          "input": { "type": "string", "description": "Friendly input name or generic Windows VK_0xNN token" },
+          "plain": { "$ref": "#/$defs/stroke" },
+          "shift": { "$ref": "#/$defs/stroke" },
+          "altGr": { "$ref": "#/$defs/stroke" }
+        },
+        "anyOf": [
+          { "required": ["plain"] },
+          { "required": ["shift"] },
+          { "required": ["altGr"] }
+        ]
+      }
+    },
+    "text": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["char", "strokes"],
+        "properties": {
+          "char": { "type": "string", "minLength": 1 },
+          "strokes": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/nonSuppressingStroke" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stroke": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string", "description": "Friendly HID name or generic HID_0xNN Keyboard/Keypad usage token" },
+        "modifiers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "suppress": { "type": "boolean" }
+      },
+      "oneOf": [
+        { "required": ["key"], "not": { "required": ["suppress"] } },
+        { "required": ["suppress"], "properties": { "suppress": { "const": true } }, "not": { "required": ["key"] } }
+      ]
+    },
+    "nonSuppressingStroke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": { "type": "string", "description": "Friendly HID name or generic HID_0xNN Keyboard/Keypad usage token" },
+        "modifiers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    }
+  }
+}

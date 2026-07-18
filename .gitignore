@@ -1,0 +1,31 @@
+# Local credentials and debug logs
+cred.json
+*.log
+
+# Compiled binaries belong in GitHub Releases, not in the source tree
+*.exe
+
+# Proprietary reference material is not part of this open-source project
+.decompiled/
+HPLOCONS.exe.config
+
+# Go build/test caches kept inside the workspace
+.gocache/
+.gomodcache/
+.gotmp/
+coverage.out
+*.test
+*.test.exe
+
+# Local tool/runtime scratch data
+.dotnet/
+.tmp/
+.tools-dotnet/
+
+# Local smoke-test media
+*.iso
+
+# OS/editor noise
+.vscode/
+.DS_Store
+Thumbs.db
