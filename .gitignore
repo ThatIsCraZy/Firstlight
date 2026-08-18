@@ -5,6 +5,9 @@ cred.json
 # Compiled binaries belong in GitHub Releases, not in the source tree
 *.exe
 
+# Local build and release staging output
+.artifacts/
+
 # Proprietary reference material is not part of this open-source project
 .decompiled/
 HPLOCONS.exe.config
