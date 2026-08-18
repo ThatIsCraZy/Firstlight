@@ -45,11 +45,11 @@ func TestAESStreamRoundTrip(t *testing.T) {
 	}
 	msg := []byte("hello ilo remote console")
 	wire := append([]byte(nil), msg...)
-	a.XORKeyStream(wire)
+	a.XORKeyStream(wire, wire)
 	if bytes.Equal(wire, msg) {
 		t.Fatal("stream did not transform data")
 	}
-	b.XORKeyStream(wire)
+	b.XORKeyStream(wire, wire)
 	if !bytes.Equal(wire, msg) {
 		t.Fatalf("roundtrip mismatch: %q", wire)
 	}

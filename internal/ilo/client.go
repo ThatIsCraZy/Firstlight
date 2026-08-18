@@ -102,6 +102,10 @@ func (c *Client) postJSON(ctx context.Context, path string, in, out any) error {
 	return c.requestJSON(ctx, http.MethodPost, path, in, out)
 }
 
+func (c *Client) patchJSON(ctx context.Context, path string, in, out any) error {
+	return c.requestJSON(ctx, http.MethodPatch, path, in, out)
+}
+
 func (c *Client) requestJSON(ctx context.Context, method, path string, in, out any) error {
 	var body io.Reader
 	if in != nil {

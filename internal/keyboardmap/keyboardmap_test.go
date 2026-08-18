@@ -102,7 +102,7 @@ func TestGenericVKAndHIDTokensNeedNoCatalogEntry(t *testing.T) {
 
 func TestLoadAddsExternalMapAndCreatesExamples(t *testing.T) {
 	dir := workspaceTestDir(t)
-	exe := filepath.Join(dir, "hpeirc.exe")
+	exe := filepath.Join(dir, "iLO-KVM.exe")
 	mapDir := filepath.Join(dir, "keyboard-maps")
 	if err := os.MkdirAll(mapDir, 0755); err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestLoadAddsExternalMapAndCreatesExamples(t *testing.T) {
 
 func TestLoadExternalGermanReplacementAndInvalidFallback(t *testing.T) {
 	dir := workspaceTestDir(t)
-	exe := filepath.Join(dir, "hpeirc.exe")
+	exe := filepath.Join(dir, "iLO-KVM.exe")
 	mapDir := filepath.Join(dir, "keyboard-maps")
 	if err := os.MkdirAll(mapDir, 0755); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestLoadExternalGermanReplacementAndInvalidFallback(t *testing.T) {
 
 func TestLoadRejectsProtectedDuplicateAndCyclicMaps(t *testing.T) {
 	dir := workspaceTestDir(t)
-	exe := filepath.Join(dir, "hpeirc.exe")
+	exe := filepath.Join(dir, "iLO-KVM.exe")
 	mapDir := filepath.Join(dir, "keyboard-maps")
 	if err := os.MkdirAll(mapDir, 0755); err != nil {
 		t.Fatal(err)

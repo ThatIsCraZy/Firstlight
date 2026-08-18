@@ -1,8 +1,21 @@
 # Third-Party Notices
 
-HPE-KVM includes or depends on the third-party software listed below. These
+iLO-KVM includes or depends on the third-party software listed below. These
 notices apply to the respective third-party components and do not replace the
-MIT License for HPE-KVM's original source code and documentation.
+MIT License for iLO-KVM's original source code and documentation.
+
+## github.com/modelcontextprotocol/go-sdk
+
+Version: `v1.7.0`
+
+Copyright 2025 The Go MCP SDK Authors. All rights reserved.
+
+The MCP project is undergoing a licensing transition from the MIT License to
+the Apache License, Version 2.0. New code and specification contributions are
+licensed under Apache-2.0; contributions whose authors have not consented to
+relicensing remain under their applicable original MIT license. The complete
+upstream license and transition notice is distributed with the Go MCP SDK at
+<https://github.com/modelcontextprotocol/go-sdk/blob/v1.7.0/LICENSE>.
 
 ## github.com/lxn/walk
 
@@ -64,7 +77,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## golang.org/x/sys
 
-Version: `v0.25.0`
+Version: `v0.41.0`
 
 Copyright 2009 The Go Authors.
 

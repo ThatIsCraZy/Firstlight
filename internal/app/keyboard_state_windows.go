@@ -8,7 +8,7 @@ import (
 	"github.com/lxn/walk"
 	"github.com/lxn/win"
 
-	"hpeirc/internal/kvm"
+	"ilo-kvm/internal/kvm"
 )
 
 // resetKeyboardStateLocked forgets every locally tracked key. Callers must hold

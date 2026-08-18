@@ -32,7 +32,8 @@ func TestCDImageInitialMediaChangedThenReady(t *testing.T) {
 	iso := testISO(t, sectorSize*2)
 	defer iso.Close()
 	conn := newFakeConn(scsiCmd(0x00), scsiCmd(0x00))
-	cd := newCDImage(conn, iso, nil, nil)
+	health := &healthCounters{}
+	cd := newCDImage(conn, iso, nil, nil, health)
 	if ok, err := cd.process(); err != nil || !ok {
 		t.Fatalf("first process ok=%v err=%v", ok, err)
 	}
@@ -48,6 +49,9 @@ func TestCDImageInitialMediaChangedThenReady(t *testing.T) {
 	}
 	if out[25] != 0 || out[26] != 0 {
 		t.Fatalf("second sense=%x", out[16:32])
+	}
+	if !health.deviceReady.Load() {
+		t.Fatal("successful TEST UNIT READY did not mark the device ready")
 	}
 }
 
@@ -65,7 +69,8 @@ func TestCDImageReadCapacityAndRead10(t *testing.T) {
 	read10[5] = 1
 	read10[8] = 1
 	conn := newFakeConn(scsiCmd(0x25), read10)
-	cd := newCDImage(conn, iso, nil, nil)
+	health := &healthCounters{}
+	cd := newCDImage(conn, iso, nil, nil, health)
 	cd.mediaState = 2
 	cd.media = 1
 	if ok, err := cd.process(); err != nil || !ok {
@@ -84,6 +89,15 @@ func TestCDImageReadCapacityAndRead10(t *testing.T) {
 	readHeader := out[24:40]
 	if readHeader[12] != 0 || readHeader[13] != 8 {
 		t.Fatalf("bad read length header: %x", readHeader)
+	}
+	if got := health.readBytes.Load(); got != sectorSize {
+		t.Fatalf("read bytes=%d want=%d", got, sectorSize)
+	}
+	if got := health.deliveredBytes.Load(); got != sectorSize {
+		t.Fatalf("delivered bytes=%d want=%d", got, sectorSize)
+	}
+	if !health.deviceReady.Load() {
+		t.Fatal("successful media read did not mark the device ready")
 	}
 }
 

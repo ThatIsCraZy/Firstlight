@@ -17,11 +17,11 @@ import (
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
 
-	"hpeirc/internal/ilo"
-	"hpeirc/internal/keyboardmap"
-	"hpeirc/internal/kvm"
-	"hpeirc/internal/uiicon"
-	"hpeirc/internal/vmedia"
+	"ilo-kvm/internal/ilo"
+	"ilo-kvm/internal/keyboardmap"
+	"ilo-kvm/internal/kvm"
+	"ilo-kvm/internal/uiicon"
+	"ilo-kvm/internal/vmedia"
 )
 
 type Config struct {
@@ -58,26 +58,29 @@ type appWindow struct {
 	logger  *log.Logger
 	logFile *os.File
 
-	mu           sync.Mutex
-	status       string
-	connecting   bool
-	connected    bool
-	captured     bool
-	inputReady   bool
-	closed       bool
-	client       *ilo.Client
-	conn         *kvm.Conn
-	cmdConn      *kvm.Conn
-	vm           *vmedia.Session
-	host         string
-	sessionKey   string
-	rcInfo       *ilo.RCInfo
-	vmISOPath    string
-	vmConnecting bool
-	serverPower  string
-	postCode     string
-	decoder      *kvm.Decoder
-	frame        image.Image
+	mu            sync.Mutex
+	sharePromptMu sync.Mutex
+	status        string
+	connecting    bool
+	connected     bool
+	captured      bool
+	inputReady    bool
+	closed        bool
+	client        *ilo.Client
+	conn          *kvm.Conn
+	cmdConn       *kvm.Conn
+	shareLeader   *kvm.LegacyShareLeader
+	vm            *vmedia.Session
+	host          string
+	sessionKey    string
+	rcInfo        *ilo.RCInfo
+	vmISOPath     string
+	vmConnecting  bool
+	sharedSession bool
+	serverPower   string
+	postCode      string
+	decoder       *kvm.Decoder
+	frame         image.Image
 
 	canvas            *walk.CustomWidget
 	statusBar         *walk.StatusBarItem
@@ -299,12 +302,12 @@ func sessionTitle(cfg Config) string {
 	addr := strings.TrimSpace(cfg.Addr)
 	user := strings.TrimSpace(cfg.User)
 	if addr == "" {
-		return "hpeirc"
+		return "iLO-KVM"
 	}
 	if user == "" {
-		return "hpeirc - " + addr
+		return "iLO-KVM - " + addr
 	}
-	return "hpeirc - " + addr + " (" + user + ")"
+	return "iLO-KVM - " + addr + " (" + user + ")"
 }
 
 func setupLogger(cfg Config) (*log.Logger, *os.File, error) {
@@ -313,7 +316,7 @@ func setupLogger(cfg Config) (*log.Logger, *os.File, error) {
 	}
 	path := cfg.LogPath
 	if path == "" {
-		path = "hpeirc-debug.log"
+		path = "iLO-KVM-debug.log"
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -376,10 +379,10 @@ func (w *appWindow) updateChrome() {
 	layoutName := w.keyboardLayoutName(w.keyboardLayout)
 	status := statusLine(w.status, w.captured, w.vmISOPath, w.vmConnecting, layoutName)
 	serverStatus := serverStatusLine(w.serverPower, w.postCode)
-	mountEnabled := w.connected && w.vm == nil && !w.vmConnecting
+	mountEnabled := w.connected && !w.sharedSession && w.vm == nil && !w.vmConnecting
 	unmountEnabled := w.connected && w.vm != nil && !w.vmConnecting
 	pasteEnabled := w.connected && w.inputReady
-	powerEnabled := w.connected && w.inputReady
+	powerEnabled := w.connected && w.inputReady && !w.sharedSession
 	layout := w.keyboardLayout
 	w.mu.Unlock()
 	if w.statusBar != nil {
@@ -642,7 +645,7 @@ func (w *appWindow) pasteClipboard() {
 func (w *appWindow) confirmAndSendPower(option kvm.PowerOption, label string) {
 	result := walk.MsgBox(
 		w.MainWindow,
-		"hpeirc Power",
+		"iLO-KVM Power",
 		fmt.Sprintf("Send power command %q to the server?", label),
 		walk.MsgBoxYesNo|walk.MsgBoxIconWarning|walk.MsgBoxDefButton2,
 	)
@@ -826,9 +829,10 @@ func (w *appWindow) shutdown() {
 	}
 	w.closed = true
 	w.logf("shutdown requested")
-	conn, cmdConn, vm, client := w.conn, w.cmdConn, w.vm, w.client
-	w.conn, w.cmdConn, w.vm, w.client = nil, nil, nil, nil
+	conn, cmdConn, shareLeader, vm, client := w.conn, w.cmdConn, w.shareLeader, w.vm, w.client
+	w.conn, w.cmdConn, w.shareLeader, w.vm, w.client = nil, nil, nil, nil, nil
 	w.connected, w.captured, w.inputReady = false, false, false
+	w.sharedSession = false
 	w.resetCapturedInputLocked()
 	w.mu.Unlock()
 	if w.ticker != nil {
@@ -838,6 +842,9 @@ func (w *appWindow) shutdown() {
 	w.cancel()
 	if vm != nil {
 		_ = vm.Close()
+	}
+	if shareLeader != nil {
+		_ = shareLeader.Close()
 	}
 	if conn != nil {
 		_ = conn.Close()

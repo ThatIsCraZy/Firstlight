@@ -2,7 +2,7 @@ package kvm
 
 import (
 	"context"
-	"fmt"
+	"crypto/cipher"
 	"io"
 	"net"
 	"strconv"
@@ -17,13 +17,30 @@ type Info struct {
 	ProtocolVersion int
 	Command         Command
 	Channel         Channel
+	Legacy          *LegacyOptions
+}
+
+type LegacyOptions struct {
+	EncryptionKey     []byte
+	EncryptionKeyText string
+	CommandKey        []byte
+	EncryptSessionKey bool
+	EncryptVMKey      bool
+	EncryptCommand    bool
 }
 
 type Conn struct {
-	net       net.Conn
-	encryptor *AESStream
-	decryptor *AESStream
-	writeMu   sync.Mutex
+	net          net.Conn
+	encryptor    cipher.Stream
+	decryptor    cipher.Stream
+	readMu       sync.Mutex
+	writeMu      sync.Mutex
+	closeOnce    sync.Once
+	closeErr     error
+	legacyKVM    bool
+	legacyKey    []byte
+	legacyCipher LegacyCipher
+	legacyShared bool
 }
 
 func (i Info) networkAddress() string {
@@ -57,10 +74,25 @@ func dialWithKeys(ctx context.Context, info Info, inboundKey, outboundKey []byte
 	if err != nil {
 		return nil, StatusBadRequest, err
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := nc.SetDeadline(deadline); err != nil {
+			_ = nc.Close()
+			return nil, StatusBadRequest, err
+		}
+		defer nc.SetDeadline(time.Time{})
+	}
 	c := &Conn{net: nc}
 	if info.ProtocolVersion <= 1 {
-		_ = nc.Close()
-		return nil, StatusNotSupported, fmt.Errorf("legacy protocol version %d needs HPLOCONS v1 negotiation, not implemented yet", info.ProtocolVersion)
+		status, err := c.negotiateLegacy(ctx, info)
+		if err != nil {
+			_ = nc.Close()
+			return nil, StatusBadRequest, err
+		}
+		if status != StatusSuccess {
+			_ = nc.Close()
+			return nil, status, nil
+		}
+		return c, StatusSuccess, nil
 	}
 	enc, err := NewAESStream(inboundKey, nil)
 	if err != nil {
@@ -69,7 +101,7 @@ func dialWithKeys(ctx context.Context, info Info, inboundKey, outboundKey []byte
 	}
 	hello := NewClientHello(enc.IV(), info.Command, info.Channel, info.SessionKey)
 	wireHello := hello.MarshalBinary()
-	enc.XORKeyStream(wireHello[16:])
+	enc.XORKeyStream(wireHello[16:], wireHello[16:])
 	if _, err := nc.Write(wireHello); err != nil {
 		_ = nc.Close()
 		return nil, StatusBadRequest, err
@@ -85,7 +117,7 @@ func dialWithKeys(ctx context.Context, info Info, inboundKey, outboundKey []byte
 		_ = nc.Close()
 		return nil, StatusBadRequest, err
 	}
-	dec.XORKeyStream(wireReply[16:])
+	dec.XORKeyStream(wireReply[16:], wireReply[16:])
 	reply, err := UnmarshalServerHello(wireReply)
 	if err != nil {
 		_ = nc.Close()
@@ -104,13 +136,21 @@ func (c *Conn) Close() error {
 	if c == nil || c.net == nil {
 		return nil
 	}
-	return c.net.Close()
+	c.closeOnce.Do(func() {
+		if c.legacyShared {
+			_, _ = c.Write(LegacyShareClosingRecord())
+		}
+		c.closeErr = c.net.Close()
+	})
+	return c.closeErr
 }
 
 func (c *Conn) Read(p []byte) (int, error) {
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
 	n, err := c.net.Read(p)
 	if n > 0 && c.decryptor != nil {
-		c.decryptor.XORKeyStream(p[:n])
+		c.decryptor.XORKeyStream(p[:n], p[:n])
 	}
 	return n, err
 }
@@ -120,7 +160,7 @@ func (c *Conn) Write(p []byte) (int, error) {
 	defer c.writeMu.Unlock()
 	out := append([]byte(nil), p...)
 	if c.encryptor != nil {
-		c.encryptor.XORKeyStream(out)
+		c.encryptor.XORKeyStream(out, out)
 	}
 	n, err := c.net.Write(out)
 	if err == nil && n != len(out) {

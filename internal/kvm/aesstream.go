@@ -47,13 +47,16 @@ func (s *AESStream) IV() []byte {
 	return append([]byte(nil), s.iv...)
 }
 
-func (s *AESStream) XORKeyStream(data []byte) {
-	for i := range data {
+func (s *AESStream) XORKeyStream(dst, src []byte) {
+	if len(dst) < len(src) {
+		panic("kvm.AESStream: output smaller than input")
+	}
+	for i := range src {
 		if s.idx >= len(s.buf) {
 			s.cbc.CryptBlocks(s.buf, s.in)
 			s.idx = 0
 		}
-		data[i] ^= s.buf[s.idx]
+		dst[i] = src[i] ^ s.buf[s.idx]
 		s.idx++
 	}
 }

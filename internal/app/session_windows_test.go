@@ -3,11 +3,14 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
-	"hpeirc/internal/kvm"
+	"ilo-kvm/internal/ilo"
+	"ilo-kvm/internal/kvm"
 )
 
 func TestDecodeServerUpdate(t *testing.T) {
@@ -41,6 +44,72 @@ func TestIsTimeoutErrorRecognizesWrappedTimeout(t *testing.T) {
 	}
 	if isTimeoutError(errors.New("ordinary")) {
 		t.Fatal("ordinary error was recognized as timeout")
+	}
+}
+
+func TestNewKVMInfoMapsLegacyRCInfo(t *testing.T) {
+	rc := &ilo.RCInfo{
+		MasterKey:       []byte("0123456789abcdef"),
+		LegacyKeyText:   "30313233343536373839616263646566",
+		CommandKey:      []byte("fedcba9876543210"),
+		ProtocolVersion: 1,
+		OptionalFeatures: map[string]bool{
+			"ENCRYPT_KEY":   true,
+			"ENCRYPT_VMKEY": true,
+			"ENCRYPT_CMD":   true,
+		},
+	}
+	got := newKVMInfo("ilo4.example", 17990, "session", rc, kvm.ChannelKVM)
+	if got.Legacy == nil {
+		t.Fatal("legacy options were not created")
+	}
+	if !got.Legacy.EncryptSessionKey || !got.Legacy.EncryptVMKey || !got.Legacy.EncryptCommand {
+		t.Fatalf("legacy feature mapping=%+v", got.Legacy)
+	}
+	if string(got.Legacy.EncryptionKey) != "0123456789abcdef" || string(got.Legacy.CommandKey) != "fedcba9876543210" {
+		t.Fatalf("legacy key mapping=%+v", got.Legacy)
+	}
+
+	got.Legacy.EncryptionKey[0] = 'x'
+	got.Legacy.CommandKey[0] = 'y'
+	if rc.MasterKey[0] != '0' || rc.CommandKey[0] != 'f' {
+		t.Fatal("newKVMInfo did not copy legacy key material")
+	}
+}
+
+func TestDecodeLegacyShareRequest(t *testing.T) {
+	data := make([]byte, 128)
+	copy(data[:64], "OTHER-ADMIN")
+	copy(data[64:], "192.0.2.44")
+	got, err := decodeLegacyShareRequest(kvm.CommandPacket{Command: commandShareRequest, Flags: 15, Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.User != "OTHER-ADMIN" || got.Address != "192.0.2.44" || got.Timeout != 15 {
+		t.Fatalf("share request=%+v", got)
+	}
+}
+
+func TestDecodeLegacyShareRequestRejectsMalformedPayload(t *testing.T) {
+	if _, err := decodeLegacyShareRequest(kvm.CommandPacket{Command: commandShareRequest, Data: bytes.Repeat([]byte{0}, 127)}); err == nil {
+		t.Fatal("expected short payload error")
+	}
+	data := make([]byte, 128)
+	copy(data[64:], "not-an-ip")
+	if _, err := decodeLegacyShareRequest(kvm.CommandPacket{Command: commandShareRequest, Data: data}); err == nil {
+		t.Fatal("expected invalid address error")
+	}
+}
+
+func TestLegacyShareDecisionTimeoutLeavesTimeForReverseDial(t *testing.T) {
+	if got := legacyShareDecisionTimeout(0); got != 8*time.Second {
+		t.Fatalf("zero timeout=%v", got)
+	}
+	if got := legacyShareDecisionTimeout(3); got != 3*time.Second {
+		t.Fatalf("short timeout=%v", got)
+	}
+	if got := legacyShareDecisionTimeout(30); got != 8*time.Second {
+		t.Fatalf("capped timeout=%v", got)
 	}
 }
 

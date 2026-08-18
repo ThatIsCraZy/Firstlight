@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"hpeirc/internal/app"
-	"hpeirc/internal/ilo"
-	"hpeirc/internal/keyboardmap"
-	"hpeirc/internal/login"
+	"ilo-kvm/internal/app"
+	"ilo-kvm/internal/ilo"
+	"ilo-kvm/internal/keyboardmap"
+	"ilo-kvm/internal/login"
 )
 
 func main() {
@@ -25,7 +25,7 @@ func main() {
 	flag.BoolVar(&cfg.Share, "share", false, "request shared console when iLO reports the console is busy")
 	flag.BoolVar(&cfg.Seize, "seize", false, "seize console when iLO reports the console is busy")
 	flag.BoolVar(&cfg.VerifyCert, "verify-cert", false, "verify the iLO HTTPS certificate")
-	flag.BoolVar(&cfg.Debug, "debug", false, "write verbose protocol/input status to hpeirc-debug.log")
+	flag.BoolVar(&cfg.Debug, "debug", false, "write verbose protocol/input status to iLO-KVM-debug.log")
 	flag.StringVar(&cfg.LogPath, "log", "", "verbose log file path; enables logging even without -debug")
 	flag.Parse()
 	executablePath, executableErr := os.Executable()

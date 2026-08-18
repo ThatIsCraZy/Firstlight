@@ -28,18 +28,25 @@ func (f *Framebuffer) Image() *image.RGBA {
 	return f.img
 }
 
-func (f *Framebuffer) Clear(c color.RGBA) {
+func (f *Framebuffer) Clear(c color.RGBA) bool {
+	changed := false
 	for y := f.img.Rect.Min.Y; y < f.img.Rect.Max.Y; y++ {
 		for x := f.img.Rect.Min.X; x < f.img.Rect.Max.X; x++ {
-			f.img.SetRGBA(x, y, c)
+			if f.img.RGBAAt(x, y) != c {
+				f.img.SetRGBA(x, y, c)
+				changed = true
+			}
 		}
 	}
+	return changed
 }
 
-func (f *Framebuffer) StorePixel(x, y int, c color.RGBA) {
-	if image.Pt(x, y).In(f.img.Rect) {
-		f.img.SetRGBA(x, y, c)
+func (f *Framebuffer) StorePixel(x, y int, c color.RGBA) bool {
+	if !image.Pt(x, y).In(f.img.Rect) || f.img.RGBAAt(x, y) == c {
+		return false
 	}
+	f.img.SetRGBA(x, y, c)
+	return true
 }
 
 type stateLine struct {
@@ -219,12 +226,15 @@ type Decoder struct {
 	color        uint16
 	lastColor    uint16
 
-	timeoutCount int
-	cmdBuff      [256]byte
-	cmdCount     int
-	cmdLast      byte
-	halt         bool
-	readyToWrite bool
+	timeoutCount  int
+	cmdBuff       [256]byte
+	cmdCount      int
+	cmdLast       byte
+	halt          bool
+	readyToWrite  bool
+	frameRevision uint64
+	encryption    LegacyCipher
+	encryptionID  uint64
 }
 
 func NewDecoder(w, h int) *Decoder {
@@ -266,6 +276,18 @@ func (d *Decoder) Feed(packet []byte) error {
 
 func (d *Decoder) ReadyToWrite() bool {
 	return d.readyToWrite
+}
+
+func (d *Decoder) FrameRevision() uint64 {
+	return d.frameRevision
+}
+
+func (d *Decoder) Encryption() LegacyCipher {
+	return d.encryption
+}
+
+func (d *Decoder) EncryptionID() uint64 {
+	return d.encryptionID
 }
 
 func (d *Decoder) initRemCons() {
@@ -616,10 +638,14 @@ func (d *Decoder) processCommand() bool {
 		if d.cmdCount > 0 {
 			d.setBitsPerColor(d.cmdBuff[0])
 		}
+	case 12:
+		if d.cmdCount > 0 {
+			d.setEncryption(LegacyCipher(d.cmdBuff[0]))
+		}
 	case 13:
 		d.processHeader(d.cmdBuff[:])
 	case 16:
-	case 2, 3, 4, 5, 7, 8, 10, 12, 128:
+	case 2, 3, 4, 5, 7, 8, 10, 128:
 	}
 	return true
 }
@@ -629,8 +655,17 @@ func (d *Decoder) processHeader(cmd []byte) {
 		return
 	}
 	d.setBitsPerColor(cmd[0])
+	d.setEncryption(LegacyCipher(cmd[1]))
 	d.setFlags(cmd[3])
-	d.readyToWrite = true
+	if !d.readyToWrite {
+		d.readyToWrite = true
+		d.frameRevision++
+	}
+}
+
+func (d *Decoder) setEncryption(mode LegacyCipher) {
+	d.encryption = mode
+	d.encryptionID++
 }
 
 func (d *Decoder) setBitsPerColor(bpc byte) {
@@ -664,6 +699,7 @@ func (d *Decoder) setHalfHeight() {
 func (d *Decoder) nextBlock(count uint16) {
 	d.nextState = 1
 	d.pixelCount = 0
+	changed := false
 	for count != 0 {
 		if d.lastX >= d.sizeX || int(d.lastY)*d.blockHeight >= d.pixelHeight {
 			count--
@@ -675,17 +711,22 @@ func (d *Decoder) nextBlock(count uint16) {
 			for x := 0; x < d.blockWidth; x++ {
 				idx := y*d.blockWidth + x
 				if idx < len(d.block) {
-					d.Framebuffer.StorePixel(baseX+x, baseY+y, d.block[idx])
+					changed = d.Framebuffer.StorePixel(baseX+x, baseY+y, d.block[idx]) || changed
 				}
 			}
 		}
 		d.lastX++
 		count--
 	}
+	if changed {
+		d.frameRevision++
+	}
 }
 
 func (d *Decoder) clearScreen() {
-	d.Framebuffer.Clear(color.RGBA{A: 255})
+	if d.Framebuffer.Clear(color.RGBA{A: 255}) {
+		d.frameRevision++
+	}
 }
 
 func (d *Decoder) switchVideoMode(cx, cy int) {
@@ -697,7 +738,9 @@ func (d *Decoder) switchVideoMode(cx, cy int) {
 		d.pixelWidth = cx
 		d.pixelHeight = cy
 		d.Framebuffer = NewFramebuffer(cx, cy)
-		d.clearScreen()
+		if d.Framebuffer.Clear(color.RGBA{A: 255}) {
+			d.frameRevision++
+		}
 	}
 	d.setHalfHeight()
 }

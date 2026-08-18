@@ -1,4 +1,4 @@
-# hpeirc keyboard-map authoring guide
+# iLO-KVM keyboard-map authoring guide
 
 This document accompanies an exported, known-good `german.json` reference map. It is intentionally detailed so that a human or an LLM can create another source-language map without changing Go code.
 
@@ -54,7 +54,7 @@ Text rules map exactly one Unicode character to one or more press/release stroke
 }
 ```
 
-Text strokes cannot use `suppress`. If a character is not defined by the selected map or its base, hpeirc counts and skips it. Multi-stroke sequences are allowed, but they must remain operating-system independent. Do not invent Windows Alt codes, Linux Compose sequences, or application-specific shortcuts for a generic map.
+Text strokes cannot use `suppress`. If a character is not defined by the selected map or its base, iLO-KVM counts and skips it. Multi-stroke sequences are allowed, but they must remain operating-system independent. Do not invent Windows Alt codes, Linux Compose sequences, or application-specific shortcuts for a generic map.
 
 ## Allowed physical input names
 
@@ -68,7 +68,7 @@ Source-layout punctuation keys: `OEM_MINUS`, `OEM_PLUS`, `OEM_1`, `OEM_2`, `OEM_
 
 Keypad and application keys: `KEYPAD_DIVIDE`, `KEYPAD_MULTIPLY`, `KEYPAD_SUBTRACT`, `KEYPAD_ADD`, `KEYPAD_0` through `KEYPAD_9`, `KEYPAD_DECIMAL`, `APPLICATION`.
 
-If Windows exposes a key that has no friendly name in this catalog, use its authoritative virtual-key value as `VK_0xNN`, where `NN` is exactly two hexadecimal digits. For example, Windows `VK_F13` is `VK_0x7C`. Generic VK identifiers make new input keys configurable without a hpeirc code change. Prefer a friendly name whenever one exists.
+If Windows exposes a key that has no friendly name in this catalog, use its authoritative virtual-key value as `VK_0xNN`, where `NN` is exactly two hexadecimal digits. For example, Windows `VK_F13` is `VK_0x7C`. Generic VK identifiers make new input keys configurable without a iLO-KVM code change. Prefer a friendly name whenever one exists.
 
 ## Allowed HID output names
 
@@ -94,7 +94,7 @@ Do not repeat a modifier in one stroke.
 
 Place a new JSON file directly in the `keyboard-maps` directory next to the executable. Subdirectories are documentation-only and are not scanned. Maps load once at application startup.
 
-A valid external map whose ID is `german` completely replaces the built-in German map. If the external replacement is invalid, hpeirc reports the error and retains the built-in map. The protected `us-base` ID cannot be overridden. Two external files with the same ID are both rejected.
+A valid external map whose ID is `german` completely replaces the built-in German map. If the external replacement is invalid, iLO-KVM reports the error and retains the built-in map. The protected `us-base` ID cannot be overridden. Two external files with the same ID are both rejected.
 
 Before installing a generated map, verify:
 
@@ -126,7 +126,7 @@ This is metadata only. It deliberately contains no guessed French key assignment
 
 ## Copy-and-paste LLM prompt
 
-Create a complete hpeirc keyboard-map JSON file for the requested source keyboard layout by using the attached exported German JSON as the structural reference and this guide as the authoritative schema.
+Create a complete iLO-KVM keyboard-map JSON file for the requested source keyboard layout by using the attached exported German JSON as the structural reference and this guide as the authoritative schema.
 
 Requirements:
 

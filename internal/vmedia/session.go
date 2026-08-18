@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,6 +19,20 @@ type Conn interface {
 
 type Logger func(format string, args ...any)
 
+type Health struct {
+	TransportAlive bool
+	DeviceReady    bool
+	ReadBytes      uint64
+	DeliveredBytes uint64
+}
+
+type healthCounters struct {
+	transportAlive atomic.Bool
+	deviceReady    atomic.Bool
+	readBytes      atomic.Uint64
+	deliveredBytes atomic.Uint64
+}
+
 type Session struct {
 	conn Conn
 	iso  *ISO
@@ -25,6 +40,7 @@ type Session struct {
 
 	stopOnce sync.Once
 	writeMu  sync.Mutex
+	health   healthCounters
 	done     chan struct{}
 }
 
@@ -35,6 +51,7 @@ func Start(ctx context.Context, conn Conn, iso *ISO, logf Logger) *Session {
 		logf: logf,
 		done: make(chan struct{}),
 	}
+	s.health.transportAlive.Store(true)
 	go s.run(ctx)
 	go s.keepalive(ctx)
 	return s
@@ -42,6 +59,15 @@ func Start(ctx context.Context, conn Conn, iso *ISO, logf Logger) *Session {
 
 func (s *Session) Done() <-chan struct{} {
 	return s.done
+}
+
+func (s *Session) Health() Health {
+	return Health{
+		TransportAlive: s.health.transportAlive.Load(),
+		DeviceReady:    s.health.deviceReady.Load(),
+		ReadBytes:      s.health.readBytes.Load(),
+		DeliveredBytes: s.health.deliveredBytes.Load(),
+	}
 }
 
 func (s *Session) Close() error {
@@ -64,6 +90,7 @@ func (s *Session) log(format string, args ...any) {
 }
 
 func (s *Session) run(ctx context.Context) {
+	defer s.health.transportAlive.Store(false)
 	defer close(s.done)
 	defer func() {
 		if err := s.Close(); err != nil {
@@ -71,7 +98,7 @@ func (s *Session) run(ctx context.Context) {
 		}
 	}()
 
-	cd := newCDImage(s.conn, s.iso, &s.writeMu, s.logf)
+	cd := newCDImage(s.conn, s.iso, &s.writeMu, s.logf, &s.health)
 	s.log("vmedia scsi loop start iso=%q size=%d", s.iso.Path(), s.iso.Size())
 	for {
 		select {
@@ -134,13 +161,18 @@ type cdImage struct {
 	mediaState int
 	eventState int
 	media      byte
+	health     *healthCounters
 }
 
-func newCDImage(conn Conn, iso *ISO, writeMu *sync.Mutex, logf Logger) *cdImage {
+func newCDImage(conn Conn, iso *ISO, writeMu *sync.Mutex, logf Logger, health ...*healthCounters) *cdImage {
 	if writeMu == nil {
 		writeMu = &sync.Mutex{}
 	}
-	return &cdImage{conn: conn, iso: iso, writeMu: writeMu, logf: logf}
+	var counters *healthCounters
+	if len(health) > 0 {
+		counters = health[0]
+	}
+	return &cdImage{conn: conn, iso: iso, writeMu: writeMu, logf: logf, health: counters}
 }
 
 func (c *cdImage) log(format string, args ...any) {
@@ -156,6 +188,8 @@ func (c *cdImage) process() (bool, error) {
 	}
 	if req[0] == 0xfe {
 		h := SyncHeader(req[4:])
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
 		_, err := c.conn.Write(h[:])
 		return true, err
 	}
@@ -235,7 +269,11 @@ func (c *cdImage) testUnitReady() error {
 		c.mediaState = 2
 		return c.sendSense(6, 40, 0, nil)
 	}
-	return c.sendSense(0, 0, 0, nil)
+	err := c.sendSense(0, 0, 0, nil)
+	if err == nil && c.health != nil {
+		c.health.deviceReady.Store(true)
+	}
+	return err
 }
 
 func (c *cdImage) read(cmd []byte) error {
@@ -271,10 +309,19 @@ func (c *cdImage) read(cmd []byte) error {
 			if err != nil {
 				return err
 			}
-			if _, err := c.conn.Write(data); err != nil {
+			c.addReadBytes(len(data))
+			written, err := c.conn.Write(data)
+			c.addDeliveredBytes(written)
+			if err != nil {
 				return err
 			}
+			if written != len(data) {
+				return io.ErrShortWrite
+			}
 			done += n
+		}
+		if c.health != nil {
+			c.health.deviceReady.Store(true)
 		}
 		return nil
 	}
@@ -282,7 +329,49 @@ func (c *cdImage) read(cmd []byte) error {
 	if err != nil {
 		return err
 	}
-	return c.sendSense(0, 0, 0, data)
+	c.addReadBytes(len(data))
+	err = c.sendReadData(data)
+	if err == nil && c.health != nil {
+		c.health.deviceReady.Store(true)
+	}
+	return err
+}
+
+func (c *cdImage) sendReadData(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	header := c.replyHeader(0, 0, 0, len(data)).Bytes()
+	buf := make([]byte, 0, len(header)+len(data))
+	buf = append(buf, header[:]...)
+	buf = append(buf, data...)
+	written, err := c.conn.Write(buf)
+	payloadWritten := written - len(header)
+	if payloadWritten < 0 {
+		payloadWritten = 0
+	}
+	if payloadWritten > len(data) {
+		payloadWritten = len(data)
+	}
+	c.addDeliveredBytes(payloadWritten)
+	if err != nil {
+		return err
+	}
+	if written != len(buf) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
+func (c *cdImage) addReadBytes(count int) {
+	if c.health != nil && count > 0 {
+		c.health.readBytes.Add(uint64(count))
+	}
+}
+
+func (c *cdImage) addDeliveredBytes(count int) {
+	if c.health != nil && count > 0 {
+		c.health.deliveredBytes.Add(uint64(count))
+	}
 }
 
 func (c *cdImage) startStopUnit(cmd []byte) (bool, error) {

@@ -9,8 +9,8 @@ import (
 
 	"github.com/lxn/walk"
 
-	"hpeirc/internal/keyboardmap"
-	"hpeirc/internal/kvm"
+	"ilo-kvm/internal/keyboardmap"
+	"ilo-kvm/internal/kvm"
 )
 
 func TestGenericVirtualKeyMappingFromJSON(t *testing.T) {
@@ -49,7 +49,7 @@ func TestGenericVirtualKeyMappingFromJSON(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(mapDir, "extended.json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
-	loaded := keyboardmap.LoadForExecutable(filepath.Join(dir, "hpeirc.exe"))
+	loaded := keyboardmap.LoadForExecutable(filepath.Join(dir, "iLO-KVM.exe"))
 	if len(loaded.Warnings) != 0 {
 		t.Fatalf("load warnings=%v", loaded.Warnings)
 	}

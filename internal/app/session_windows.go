@@ -6,13 +6,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"hpeirc/internal/ilo"
-	"hpeirc/internal/kvm"
-	"hpeirc/internal/vmedia"
+	"github.com/lxn/walk"
+	decl "github.com/lxn/walk/declarative"
+	"github.com/lxn/win"
+
+	"ilo-kvm/internal/ilo"
+	"ilo-kvm/internal/kvm"
+	"ilo-kvm/internal/vmedia"
 )
 
 const connectionPollInterval = 500 * time.Millisecond
@@ -88,7 +93,7 @@ func (w *appWindow) connect(cfg Config) error {
 	if !rc.Enabled {
 		return errors.New("remote console is disabled on this iLO")
 	}
-	info := kvm.Info{Host: host, Port: rc.RCPort, SessionKey: client.SessionKey(), ProtocolVersion: rc.ProtocolVersion, Command: kvm.CommandNew, Channel: kvm.ChannelKVM}
+	info := newKVMInfo(host, rc.RCPort, client.SessionKey(), rc, kvm.ChannelKVM)
 	inKey, outKey := kvm.DeriveKeys(rc.MasterKey)
 	conn, status, err := kvm.DialWithKeys(w.ctx, info, inKey, outKey)
 	if err != nil {
@@ -109,8 +114,13 @@ func (w *appWindow) connect(cfg Config) error {
 	if status != kvm.StatusSuccess {
 		return errors.New(status.Error())
 	}
+	sharedSession := rc.ProtocolVersion <= 1 && info.Command == kvm.CommandShare
+	if sharedSession && cfg.ISOPath != "" {
+		_ = conn.Close()
+		return errors.New("legacy shared sessions do not support virtual media")
+	}
 	var cmdConn *kvm.Conn
-	if cfg.ISOPath == "" {
+	if !sharedSession && cfg.ISOPath == "" {
 		var cmdErr error
 		cmdConn, cmdErr = w.openCommandChannel(host, client.SessionKey(), rc)
 		if cmdErr != nil {
@@ -129,10 +139,25 @@ func (w *appWindow) connect(cfg Config) error {
 			}
 			return err
 		}
+		if rc.ProtocolVersion <= 1 && !sharedSession {
+			cmdConn, err = w.openCommandChannel(host, client.SessionKey(), rc)
+			if err != nil {
+				w.logf("legacy cmd channel unavailable after virtual-media mount: %v", err)
+				cmdConn = nil
+			} else {
+				w.logf("legacy cmd channel connected")
+			}
+		}
 	}
 	decoder := kvm.NewDecoder(800, 600)
+	var shareLeader *kvm.LegacyShareLeader
+	if rc.ProtocolVersion <= 1 && !sharedSession {
+		shareLeader = kvm.NewLegacyShareLeader(conn)
+	}
 	w.mu.Lock()
 	w.client, w.conn, w.vm = client, conn, vm
+	w.shareLeader = shareLeader
+	w.sharedSession = sharedSession
 	if cmdConn != nil {
 		w.cmdConn = cmdConn
 	}
@@ -150,11 +175,11 @@ func (w *appWindow) connect(cfg Config) error {
 	if cmdConn != nil {
 		go w.readCommandLoop(cmdConn)
 	}
-	go w.readLoop(conn)
+	go w.readLoop(conn, rc.ProtocolVersion <= 1)
 	return nil
 }
 
-func (w *appWindow) readLoop(conn *kvm.Conn) {
+func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
 	buf := make([]byte, 32*1024)
 	readBytes := 0
 	lastReadLog := time.Now()
@@ -175,8 +200,23 @@ func (w *appWindow) readLoop(conn *kvm.Conn) {
 				readBytes = 0
 				lastReadLog = time.Now()
 			}
+			previousEncryptionID := w.decoder.EncryptionID()
+			w.mu.Lock()
+			shareLeader := w.shareLeader
+			w.mu.Unlock()
+			if shareLeader != nil {
+				shareLeader.Broadcast(buf[:n])
+			}
 			if feedErr := w.decoder.Feed(buf[:n]); feedErr != nil {
 				w.logf("decoder unsupported packet after read n=%d: %v", n, feedErr)
+			}
+			if legacy && w.decoder.EncryptionID() != previousEncryptionID {
+				if cipherErr := conn.SetLegacyKVMEncryption(w.decoder.Encryption()); cipherErr != nil {
+					w.logf("legacy KVM encryption change failed mode=%d: %v", w.decoder.Encryption(), cipherErr)
+					w.handleDisconnect(fmt.Sprintf("Disconnected: legacy KVM encryption failed: %v", cipherErr))
+					return
+				}
+				w.logf("legacy KVM encryption mode=%d", w.decoder.Encryption())
 			}
 			if w.decoder.ReadyToWrite() {
 				sendInitialAllKeysUp := false
@@ -208,14 +248,16 @@ func (w *appWindow) readLoop(conn *kvm.Conn) {
 func (w *appWindow) handleDisconnect(status string) {
 	var vm *vmedia.Session
 	var cmdConn *kvm.Conn
+	var shareLeader *kvm.LegacyShareLeader
 	w.mu.Lock()
 	w.status = status
 	w.connected = false
 	w.captured = false
 	w.inputReady = false
 	w.resetCapturedInputLocked()
-	vm, cmdConn = w.vm, w.cmdConn
-	w.vm, w.cmdConn = nil, nil
+	vm, cmdConn, shareLeader = w.vm, w.cmdConn, w.shareLeader
+	w.vm, w.cmdConn, w.shareLeader = nil, nil, nil
+	w.sharedSession = false
 	w.vmISOPath = ""
 	w.vmConnecting = false
 	w.serverPower = "unavailable"
@@ -227,13 +269,38 @@ func (w *appWindow) handleDisconnect(status string) {
 	if vm != nil {
 		_ = vm.Close()
 	}
+	if shareLeader != nil {
+		_ = shareLeader.Close()
+	}
 	w.ui(w.updateChrome)
 }
 
 func (w *appWindow) connectCommandChannel(host, sessionKey string, rc *ilo.RCInfo) (*kvm.Conn, kvm.Status, error) {
-	info := kvm.Info{Host: host, Port: rc.RCPort, SessionKey: sessionKey, ProtocolVersion: rc.ProtocolVersion, Command: kvm.CommandNew, Channel: kvm.ChannelCmd}
+	info := newKVMInfo(host, rc.RCPort, sessionKey, rc, kvm.ChannelCmd)
 	inKey, outKey := kvm.DeriveKeyPair(rc.MasterKey, 1)
 	return kvm.DialWithKeys(w.ctx, info, inKey, outKey)
+}
+
+func newKVMInfo(host string, port uint16, sessionKey string, rc *ilo.RCInfo, channel kvm.Channel) kvm.Info {
+	info := kvm.Info{
+		Host:            host,
+		Port:            port,
+		SessionKey:      sessionKey,
+		ProtocolVersion: rc.ProtocolVersion,
+		Command:         kvm.CommandNew,
+		Channel:         channel,
+	}
+	if rc.ProtocolVersion <= 1 {
+		info.Legacy = &kvm.LegacyOptions{
+			EncryptionKey:     append([]byte(nil), rc.MasterKey...),
+			EncryptionKeyText: rc.LegacyKeyText,
+			CommandKey:        append([]byte(nil), rc.CommandKey...),
+			EncryptSessionKey: rc.OptionalFeatures["ENCRYPT_KEY"],
+			EncryptVMKey:      rc.OptionalFeatures["ENCRYPT_VMKEY"],
+			EncryptCommand:    rc.OptionalFeatures["ENCRYPT_CMD"],
+		}
+	}
+	return info
 }
 
 func (w *appWindow) openCommandChannel(host, sessionKey string, rc *ilo.RCInfo) (*kvm.Conn, error) {
@@ -253,9 +320,6 @@ func (w *appWindow) startISO(isoPath, host, sessionKey string, rc *ilo.RCInfo) (
 	if rc == nil {
 		return nil, errors.New("virtual media is unavailable before RcInfo has been loaded")
 	}
-	if rc.ProtocolVersion <= 1 {
-		return nil, fmt.Errorf("virtual media ISO requires iLO remote console protocol v2+, got v%d", rc.ProtocolVersion)
-	}
 	if rc.VMPort == 0 {
 		return nil, errors.New("virtual media ISO requested but iLO did not provide VmPort")
 	}
@@ -265,6 +329,21 @@ func (w *appWindow) startISO(isoPath, host, sessionKey string, rc *ilo.RCInfo) (
 	iso, err := vmedia.OpenISO(isoPath)
 	if err != nil {
 		return nil, err
+	}
+	if rc.ProtocolVersion <= 1 {
+		conn, dialErr := vmedia.DialLegacy(w.ctx, vmedia.LegacyInfo{
+			Host:              host,
+			Port:              rc.VMPort,
+			SessionKey:        sessionKey,
+			EncryptionKeyText: rc.LegacyKeyText,
+			EncryptSessionKey: rc.OptionalFeatures["ENCRYPT_VMKEY"],
+			Device:            vmedia.LegacyDeviceCDROM,
+		})
+		if dialErr != nil {
+			_ = iso.Close()
+			return nil, fmt.Errorf("legacy virtual media connect failed: %w", dialErr)
+		}
+		return vmedia.Start(w.ctx, conn, iso, w.logf), nil
 	}
 	w.mu.Lock()
 	cmdConn := w.cmdConn
@@ -335,8 +414,9 @@ func isTimeoutError(err error) bool {
 }
 
 const (
-	commandServerPower = 3
-	commandPOSTCode    = 5
+	commandServerPower  = 3
+	commandPOSTCode     = 5
+	commandShareRequest = 9
 )
 
 type serverUpdate struct {
@@ -364,6 +444,15 @@ func decodeServerUpdate(packet kvm.CommandPacket) (serverUpdate, bool) {
 
 func (w *appWindow) handleCommandPacket(packet kvm.CommandPacket) {
 	w.logf("cmd packet cmd=%d size=%d seq=%d flags=%d data=%x", packet.Command, packet.Size, packet.Seq, packet.Flags, packet.Data)
+	if packet.Command == commandShareRequest {
+		w.mu.Lock()
+		legacy := w.rcInfo != nil && w.rcInfo.ProtocolVersion <= 1
+		w.mu.Unlock()
+		if legacy {
+			go w.handleLegacyShareRequest(packet)
+		}
+		return
+	}
 	update, ok := decodeServerUpdate(packet)
 	if !ok {
 		return
@@ -374,6 +463,139 @@ func (w *appWindow) handleCommandPacket(packet kvm.CommandPacket) {
 	if update.postCode != "" {
 		w.setPostCode(update.postCode)
 	}
+}
+
+type legacyShareRequest struct {
+	User    string
+	Address string
+	Timeout uint16
+}
+
+func decodeLegacyShareRequest(packet kvm.CommandPacket) (legacyShareRequest, error) {
+	if packet.Command != commandShareRequest {
+		return legacyShareRequest{}, fmt.Errorf("not a legacy share request: command %d", packet.Command)
+	}
+	if len(packet.Data) < 128 {
+		return legacyShareRequest{}, fmt.Errorf("legacy share request payload is %d bytes, want at least 128", len(packet.Data))
+	}
+	request := legacyShareRequest{
+		User:    strings.TrimRight(string(packet.Data[:64]), "\x00"),
+		Address: strings.TrimRight(string(packet.Data[64:128]), "\x00"),
+		Timeout: packet.Flags,
+	}
+	if request.User == "" {
+		request.User = "UNKNOWN"
+	}
+	if net.ParseIP(request.Address) == nil {
+		return legacyShareRequest{}, fmt.Errorf("legacy share request has invalid peer address %q", request.Address)
+	}
+	return request, nil
+}
+
+func (w *appWindow) handleLegacyShareRequest(packet kvm.CommandPacket) {
+	w.sharePromptMu.Lock()
+	defer w.sharePromptMu.Unlock()
+
+	request, err := decodeLegacyShareRequest(packet)
+	if err != nil {
+		w.logf("legacy share request rejected: %v", err)
+		return
+	}
+	w.mu.Lock()
+	cmdConn, leader := w.cmdConn, w.shareLeader
+	port := uint16(0)
+	if w.rcInfo != nil {
+		port = w.rcInfo.RCPort
+	}
+	w.mu.Unlock()
+	if cmdConn == nil || leader == nil || port == 0 {
+		w.logf("legacy share request cannot be handled: command or leader connection unavailable")
+		return
+	}
+	accepted := false
+	var promptErr error
+	w.ui(func() {
+		accepted, promptErr = confirmLegacyShare(w.MainWindow, request)
+	})
+	if promptErr != nil {
+		w.logf("legacy share request prompt failed peer=%s: %v", request.Address, promptErr)
+	}
+	if err := cmdConn.SendLegacyShareDecision(accepted); err != nil {
+		w.logf("legacy share decision failed peer=%s accepted=%v: %v", request.Address, accepted, err)
+		return
+	}
+	if !accepted {
+		w.logf("legacy share request denied peer=%s user=%q", request.Address, request.User)
+		return
+	}
+	if err := leader.ConnectPeer(w.ctx, request.Address, port); err != nil {
+		w.logf("legacy share reverse connection failed peer=%s port=%d: %v", request.Address, port, err)
+		w.setStatus(fmt.Sprintf("Shared-session connection to %s failed: %v", request.Address, err))
+		return
+	}
+	w.logf("legacy share peer connected peer=%s port=%d", request.Address, port)
+	w.setStatus("Shared-session peer connected: " + request.Address)
+}
+
+func legacyShareDecisionTimeout(flag uint16) time.Duration {
+	const maximum = 8 * time.Second
+	if flag == 0 {
+		return maximum
+	}
+	d := time.Duration(flag) * time.Second
+	if d > maximum {
+		return maximum
+	}
+	return d
+}
+
+func confirmLegacyShare(owner walk.Form, request legacyShareRequest) (bool, error) {
+	timeout := legacyShareDecisionTimeout(request.Timeout)
+	var dialog *walk.Dialog
+	var allowButton, denyButton *walk.PushButton
+	view := decl.Dialog{
+		AssignTo:      &dialog,
+		Title:         "Shared remote-console request",
+		FixedSize:     true,
+		MinSize:       decl.Size{Width: 480, Height: 150},
+		DefaultButton: &denyButton,
+		CancelButton:  &denyButton,
+		Layout:        decl.VBox{},
+		Children: []decl.Widget{
+			decl.TextLabel{
+				MinSize: decl.Size{Width: 440},
+				Text: fmt.Sprintf(
+					"Allow %s at %s to join this remote-console session?\n\nThe request will be denied automatically after %d seconds.",
+					request.User, request.Address, int(timeout/time.Second)),
+			},
+			decl.Composite{
+				Layout: decl.HBox{},
+				Children: []decl.Widget{
+					decl.HSpacer{},
+					decl.PushButton{
+						AssignTo:  &allowButton,
+						Text:      "Allow",
+						OnClicked: func() { dialog.Close(walk.DlgCmdYes) },
+					},
+					decl.PushButton{
+						AssignTo:  &denyButton,
+						Text:      "Deny",
+						OnClicked: func() { dialog.Close(walk.DlgCmdNo) },
+					},
+				},
+			},
+		},
+	}
+	if err := view.Create(owner); err != nil {
+		return false, err
+	}
+	defer dialog.Dispose()
+	timer := time.AfterFunc(timeout, func() {
+		win.PostMessage(denyButton.Handle(), win.BM_CLICK, 0, 0)
+	})
+	result := dialog.Run()
+	timer.Stop()
+	return result == walk.DlgCmdYes, nil
 }
 
 func (w *appWindow) setServerPower(on bool) {

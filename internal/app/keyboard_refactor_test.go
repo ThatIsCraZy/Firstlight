@@ -10,8 +10,8 @@ import (
 
 	"github.com/lxn/walk"
 
-	"hpeirc/internal/keyboardmap"
-	"hpeirc/internal/kvm"
+	"ilo-kvm/internal/keyboardmap"
+	"ilo-kvm/internal/kvm"
 )
 
 func TestWalkKeyDefinitionsMatchUSBase(t *testing.T) {

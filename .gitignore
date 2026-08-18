@@ -12,6 +12,7 @@ HPLOCONS.exe.config
 # Go build/test caches kept inside the workspace
 .gocache/
 .gomodcache/
+.gopath/
 .gotmp/
 coverage.out
 *.test

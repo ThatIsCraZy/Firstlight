@@ -7,7 +7,7 @@ import (
 
 	"github.com/lxn/walk"
 
-	"hpeirc/internal/kvm"
+	"ilo-kvm/internal/kvm"
 )
 
 func TestKeyboardLayoutDefaultUsesPhysicalYZ(t *testing.T) {

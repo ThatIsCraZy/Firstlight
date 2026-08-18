@@ -14,6 +14,8 @@ import (
 type RCInfo struct {
 	Enabled          bool
 	MasterKey        []byte
+	LegacyKeyText    string
+	CommandKey       []byte
 	ProtocolVersion  int
 	RCPort           uint16
 	VMPort           uint16
@@ -67,6 +69,7 @@ type legacyRCInfo struct {
 	HTTPSPort        string      `json:"https_port"`
 	EncKey           string      `json:"enc_key"`
 	EncType          int         `json:"enc_type"`
+	CommandEncKey    string      `json:"cmd_enc_key"`
 	RCPort           int         `json:"rc_port"`
 	VMKey            string      `json:"vm_key"`
 	VMPort           int         `json:"vm_port"`
@@ -75,9 +78,17 @@ type legacyRCInfo struct {
 }
 
 func (r legacyRCInfo) normalize() (*RCInfo, error) {
-	key, err := hex.DecodeString(strings.TrimSpace(r.EncKey))
+	legacyKeyText := strings.TrimSpace(r.EncKey)
+	key, err := hex.DecodeString(legacyKeyText)
 	if err != nil {
 		return nil, fmt.Errorf("bad legacy enc_key: %w", err)
+	}
+	var commandKey []byte
+	if text := strings.TrimSpace(r.CommandEncKey); text != "" {
+		commandKey, err = hex.DecodeString(text)
+		if err != nil {
+			return nil, fmt.Errorf("bad legacy cmd_enc_key: %w", err)
+		}
 	}
 	pv, err := parseProtocolVersion(r.ProtocolVersion)
 	if err != nil {
@@ -92,6 +103,8 @@ func (r legacyRCInfo) normalize() (*RCInfo, error) {
 	return &RCInfo{
 		Enabled:          true,
 		MasterKey:        key,
+		LegacyKeyText:    legacyKeyText,
+		CommandKey:       commandKey,
 		ProtocolVersion:  pv,
 		RCPort:           uint16(r.RCPort),
 		VMPort:           uint16(r.VMPort),

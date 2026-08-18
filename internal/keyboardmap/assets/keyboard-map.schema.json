@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hpeirc.local/schemas/keyboard-map-v1.json",
-  "title": "hpeirc keyboard map",
+  "$id": "https://ilo-kvm.local/schemas/keyboard-map-v1.json",
+  "title": "iLO-KVM keyboard map",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "displayName", "sourceLocale", "targetLocale", "physical", "text"],
