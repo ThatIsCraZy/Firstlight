@@ -1,9 +1,11 @@
-# iLO-KVM
+# Firstlight
+
+**A remote console for HPE iLO managed servers.**
 
 > [!IMPORTANT]
-> iLO-KVM is an independent community open-source project. It is **not affiliated with, sponsored by, endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise (HPE)**. It is not an official HPE product, and HPE does not provide support for it.
+> Firstlight is an independent community open-source project. It is **not affiliated with, sponsored by, endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise (HPE)**. It is not an official HPE product, and HPE does not provide support for it.
 
-iLO-KVM is a native Windows remote-console client for servers managed through HPE Integrated Lights-Out (iLO). It is intended as a community-maintained successor to the legacy `HPLOCONS` client, which is no longer actively maintained, and as a foundation for features that go beyond the original client.
+Firstlight is a native Windows remote-console client for servers managed through HPE Integrated Lights-Out (iLO). It is intended as a community-maintained successor to the legacy `HPLOCONS` client, which is no longer actively maintained, and as a foundation for features that go beyond the original client.
 
 It gives you full keyboard/video/mouse access to a server from power-on through BIOS/UEFI to the running operating system, plus ISO virtual media, power control and boot-override handling — as a single self-contained executable, with no browser plug-in, Java or .NET runtime required. A second executable exposes the same console stack over the Model Context Protocol, so an LLM agent can operate the console under explicit confirmation rules. Successfully tested on HPE ProLiant Gen10 and Gen10 Plus, with the remote-console core additionally confirmed on Gen11 and Gen12; see [Tested hardware](#tested-hardware).
 
@@ -17,7 +19,7 @@ The references to HPE and iLO exist only to explain which systems this software 
 - Make keyboard translation, clipboard input, virtual media, and future language support extensible.
 - Document and test the implementation so that it can be maintained by the community.
 
-## What iLO-KVM can do
+## What Firstlight can do
 
 ### Remote console
 
@@ -84,7 +86,7 @@ The references to HPE and iLO exist only to explain which systems this software 
 
 *KVM core tested* means the remote-console core — connecting, video, keyboard and mouse — was confirmed working on that generation. The surrounding features are built on the same code paths and are expected to behave the same, but have not been individually re-verified there.
 
-Both remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes — iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path. If you run iLO-KVM against a generation or firmware revision that is not listed above, a short report of what worked is welcome.
+Both remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes — iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path. If you run Firstlight against a generation or firmware revision that is not listed above, a short report of what worked is welcome.
 
 ## Current scope and limitations
 
@@ -107,11 +109,11 @@ Requirements:
 From PowerShell:
 
 ```powershell
-git clone https://github.com/ThatIsCraZy/iLO-KVM.git
-Set-Location iLO-KVM
+git clone https://github.com/ThatIsCraZy/Firstlight.git
+Set-Location Firstlight
 go test ./...
-go build -trimpath -ldflags '-H=windowsgui' -o iLO-KVM.exe ./cmd/ilo-kvm
-go build -trimpath -o iLO-KVM-mcp.exe ./cmd/ilo-kvm-mcp
+go build -trimpath -ldflags '-H=windowsgui' -o Firstlight.exe ./cmd/firstlight
+go build -trimpath -o Firstlight-mcp.exe ./cmd/firstlight-mcp
 ```
 
 The generated executables are self-contained. Build products are intentionally not stored in the source tree; published binaries should be attached to GitHub Releases.
@@ -125,25 +127,25 @@ committed `versioninfo.syso`, generated from `versioninfo.json` with
 
 ```powershell
 go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
-Push-Location cmd/ilo-kvm
+Push-Location cmd/firstlight
 goversioninfo -64 -o versioninfo.syso versioninfo.json
 Pop-Location
-Push-Location cmd/ilo-kvm-mcp
+Push-Location cmd/firstlight-mcp
 goversioninfo -64 -o versioninfo.syso versioninfo.json
 Pop-Location
 ```
 
-The GUI client additionally embeds [`iLO-KVM.exe.manifest`](cmd/ilo-kvm/iLO-KVM.exe.manifest),
+The GUI client additionally embeds [`Firstlight.exe.manifest`](cmd/firstlight/Firstlight.exe.manifest),
 which requests per-monitor DPI awareness and Common Controls v6.
 
 ## Running
 
-Start `iLO-KVM.exe` without arguments to open the launcher. Saved passwords are encrypted for the current Windows user with DPAPI.
+Start `Firstlight.exe` without arguments to open the launcher. Saved passwords are encrypted for the current Windows user with DPAPI.
 
 The client can also be started directly:
 
 ```powershell
-.\iLO-KVM.exe -addr 192.0.2.10 -name Administrator -password 'your-password'
+.\Firstlight.exe -addr 192.0.2.10 -name Administrator -password 'your-password'
 ```
 
 Common options:
@@ -167,7 +169,7 @@ Common options:
 
 ## MCP bridge
 
-`iLO-KVM-mcp.exe` is a standalone translation layer between an MCP client and the existing iLO/KVM protocol implementation. It does not import the desktop application or its `internal/login` credential store, does not enumerate saved launcher sessions, and does not read the current Windows user's DPAPI-protected `cred.json`.
+`Firstlight-mcp.exe` is a standalone translation layer between an MCP client and the existing iLO/KVM protocol implementation. It does not import the desktop application or its `internal/login` credential store, does not enumerate saved launcher sessions, and does not read the current Windows user's DPAPI-protected `cred.json`.
 
 ### Protocol conformance
 
@@ -187,7 +189,7 @@ The default stdio transport is suitable for a locally launched MCP server:
 {
   "mcpServers": {
     "hpe-ilo": {
-      "command": "C:\\Program Files\\iLO-KVM\\iLO-KVM-mcp.exe"
+      "command": "C:\\Program Files\\Firstlight\\Firstlight-mcp.exe"
     }
   }
 }
@@ -196,14 +198,14 @@ The default stdio transport is suitable for a locally launched MCP server:
 For clients that require Streamable HTTP, start the bridge explicitly:
 
 ```powershell
-.\iLO-KVM-mcp.exe -transport http -listen 127.0.0.1:8765 -endpoint /mcp
+.\Firstlight-mcp.exe -transport http -listen 127.0.0.1:8765 -endpoint /mcp
 ```
 
 Virtual media is disabled by default. To allow ISO mounting for this MCP
 process, configure one explicit root directory, for example the demo root:
 
 ```powershell
-.\iLO-KVM-mcp.exe -iso-root Z:\Source\vme
+.\Firstlight-mcp.exe -iso-root C:\iso
 ```
 
 Only non-empty regular `.iso` files whose canonical path remains below that
@@ -257,19 +259,34 @@ Generated references are stored under `keyboard-maps/_examples`. See the exporte
 
 ## Third-party packages and acknowledgements
 
-iLO-KVM is built with a small set of permissively licensed Go modules:
+Firstlight is built with a small set of permissively licensed Go modules. The table
+below lists every module compiled into the released executables, direct and
+transitive alike:
 
-| Package | How it is used | License | Copyright holder / authors |
+| Module | How it is used | License | Copyright holder / authors |
 |---|---|---|---|
-| [`github.com/lxn/walk`](https://github.com/lxn/walk) | Native Windows GUI toolkit | [BSD 3-Clause](https://github.com/lxn/walk/blob/c389da54e794/LICENSE) | The Walk Authors |
-| [`github.com/lxn/win`](https://github.com/lxn/win) | Win32 API bindings used by the GUI and input handling | [BSD 3-Clause](https://github.com/lxn/win/blob/a377121e959e/LICENSE) | The win Authors |
-| [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) | MCP 2026-07-28 server, tool schemas, stdio, and stateless Streamable HTTP | [Apache-2.0 / MIT transition notice](https://github.com/modelcontextprotocol/go-sdk/blob/v1.7.0/LICENSE) | The Go MCP SDK Authors |
-| [`golang.org/x/sys`](https://pkg.go.dev/golang.org/x/sys) | Low-level system interfaces, included transitively | [BSD 3-Clause](https://github.com/golang/sys/blob/v0.41.0/LICENSE) | The Go Authors |
-| [`gopkg.in/Knetic/govaluate.v3`](https://github.com/Knetic/govaluate) | Expression evaluation, included transitively through Walk | [MIT](https://github.com/Knetic/govaluate/blob/v3.0.0/LICENSE) | George Lester |
+| [`github.com/lxn/walk`](https://github.com/lxn/walk) | Native Windows GUI toolkit | BSD-3-Clause | The Walk Authors |
+| [`github.com/lxn/win`](https://github.com/lxn/win) | Win32 API bindings used by the GUI and input handling | BSD-3-Clause | The win Authors |
+| [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) | MCP server, tool schemas, stdio and stateless Streamable HTTP | Apache-2.0 (with MIT transition notice) | The Go MCP SDK Authors |
+| [`golang.org/x/sys`](https://pkg.go.dev/golang.org/x/sys) | Low-level Windows system interfaces | BSD-3-Clause | The Go Authors |
+| [`github.com/google/jsonschema-go`](https://github.com/google/jsonschema-go) | JSON Schema generation and validation for MCP tool arguments, via the MCP SDK | MIT | JSON Schema Go Project Authors |
+| [`github.com/segmentio/encoding`](https://github.com/segmentio/encoding) | Fast JSON encoding, via the MCP SDK | MIT | Segment.io, Inc. |
+| [`github.com/segmentio/asm`](https://github.com/segmentio/asm) | SIMD helpers used by `segmentio/encoding` | MIT-0 | Segment |
+| [`github.com/yosida95/uritemplate/v3`](https://github.com/yosida95/uritemplate) | RFC 6570 URI templates for MCP resource URIs | BSD-3-Clause | Kohei Yoshida |
+| [`golang.org/x/oauth2`](https://pkg.go.dev/golang.org/x/oauth2) | OAuth 2.0 client support in the MCP SDK's HTTP transport | BSD-3-Clause | The Go Authors |
+| [`golang.org/x/sync`](https://pkg.go.dev/golang.org/x/sync) | Concurrency primitives used by the MCP SDK | BSD-3-Clause | The Go Authors |
+| [`golang.org/x/time`](https://pkg.go.dev/golang.org/x/time) | Rate limiting used by the MCP SDK | BSD-3-Clause | The Go Authors |
+| [`gopkg.in/Knetic/govaluate.v3`](https://github.com/Knetic/govaluate) | Expression evaluation, required by Walk's data binding | MIT | George Lester |
 
-The exact versions are recorded in [`go.mod`](go.mod) and reproducibly verified by [`go.sum`](go.sum). “Transitively” means that iLO-KVM does not import the package directly, but a direct dependency requires it.
+Exact versions are pinned in [`go.mod`](go.mod) and cryptographically verified by
+[`go.sum`](go.sum). The complete copyright notices and license texts for all of the
+above are reproduced in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and ship
+with every release archive, as those licenses require.
 
-Our sincere thanks go to the Walk Authors, the win Authors, the Go MCP SDK Authors, the Go Authors, George Lester, and all contributors to these projects. Their work makes this independent open-source client possible. The applicable copyright and license notices are reproduced in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md); those licenses continue to apply to the respective third-party components.
+Our sincere thanks go to the Walk Authors, the win Authors, the Go MCP SDK Authors,
+the Go Authors, the JSON Schema Go Project Authors, Segment, Kohei Yoshida, George
+Lester, and all contributors to these projects. Their work makes this independent
+open-source client possible.
 
 ## Development
 
@@ -280,13 +297,58 @@ go test ./...
 go vet ./...
 ```
 
-Contributions are welcome. Keep protocol changes focused, add regression tests, and do not submit HPE binaries, firmware, decompiled proprietary sources, credentials, debug logs, or other material that you do not have the right to redistribute.
+Contributions are welcome. Keep protocol changes focused and add regression tests. See [How the protocol was determined](#how-the-protocol-was-determined) for what must not be submitted.
 
 ## License
 
-The original source code and documentation in this repository are released under the permissive [MIT License](LICENSE). In short, the MIT License permits use, copying, modification, publication, distribution, sublicensing, and commercial use, subject to retaining the copyright and license notice.
+Firstlight's own source code and documentation are released under the
+[Apache License, Version 2.0](LICENSE). Apache-2.0 permits use, modification,
+distribution and commercial use, and it adds two things that matter for a project
+like this one: an express patent grant from every contributor, and an explicit
+statement in Section 6 that the license grants **no** rights to anyone's trade
+names or trademarks.
 
-The MIT License applies only to material owned by this project's contributors. It does **not** grant any patent, copyright, trademark, branding, or other rights belonging to HPE or any other third party.
+The [`NOTICE`](NOTICE) file carries the non-affiliation statement, the trademark
+attribution, and the interoperability statement. Apache-2.0 Section 4(d) requires
+anyone who redistributes Firstlight to pass that file along, so those
+clarifications travel with every downstream copy.
+
+This license applies only to material owned by this project's contributors. It does
+**not** grant any patent, copyright, trademark, branding or other rights belonging
+to HPE or to any other third party.
+
+## How the protocol was determined
+
+Firstlight is an independently written client. It contains no source code, no
+binaries, no resources and no artwork originating from HPE or from any HPE client
+software, and this repository deliberately ships none of that material.
+
+Public HPE documentation names the TCP services used by the Integrated Remote
+Console but does not define their application-layer wire formats. Those formats
+were therefore determined by analysing the protocol's observable behaviour —
+principally the traffic on the wire — for the single purpose of making an
+independent client interoperate with iLO management processors. The result is
+documented in [`ILO-Wireprotokol.md`](ILO-Wireprotokol.md), which labels every
+material claim as *Verified*, *Observed* or *Inferred* rather than presenting
+guesses as facts.
+
+In the European Union this kind of interoperability analysis is expressly
+permitted:
+
+- **Article 6 of Directive 2009/24/EC** and its German implementation in
+  **Section 69e UrhG** permit the acts necessary to obtain the information needed
+  to achieve the interoperability of an independently created program.
+- **Section 69g(2) UrhG** renders contractual provisions that purport to forbid
+  those acts void.
+- The Court of Justice of the European Union held in **C-406/10 (SAS Institute v.
+  World Programming)** that a program's functionality, its interfaces and its data
+  formats are not themselves protected by copyright, so reimplementing observed
+  protocol behaviour does not reproduce a protected work.
+
+Firstlight's purpose is interoperability with the iLO management processor, not the
+reproduction of any HPE client's internal structure or expression. Contributions
+must respect that boundary: do not submit HPE binaries, firmware, decompiled
+proprietary sources, extracted resources, credentials or debug logs.
 
 ## Trademark and non-affiliation notice
 

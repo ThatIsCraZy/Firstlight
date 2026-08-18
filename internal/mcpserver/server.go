@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"ilo-kvm/internal/console"
+	"firstlight/internal/console"
 )
 
 const Version = "1.1.0"
@@ -23,8 +23,8 @@ type Bridge struct {
 func New(manager *console.Manager) *mcp.Server {
 	bridge := &Bridge{manager: manager}
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "iLO-KVM-mcp",
-		Title:   "iLO-KVM Remote Console Bridge",
+		Name:    "Firstlight-mcp",
+		Title:   "Firstlight Remote Console Bridge",
 		Version: Version,
 	}, nil)
 	bridge.registerTools(server)

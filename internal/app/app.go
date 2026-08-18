@@ -17,11 +17,11 @@ import (
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
 
-	"ilo-kvm/internal/ilo"
-	"ilo-kvm/internal/keyboardmap"
-	"ilo-kvm/internal/kvm"
-	"ilo-kvm/internal/uiicon"
-	"ilo-kvm/internal/vmedia"
+	"firstlight/internal/ilo"
+	"firstlight/internal/keyboardmap"
+	"firstlight/internal/kvm"
+	"firstlight/internal/uiicon"
+	"firstlight/internal/vmedia"
 )
 
 type Config struct {
@@ -302,12 +302,12 @@ func sessionTitle(cfg Config) string {
 	addr := strings.TrimSpace(cfg.Addr)
 	user := strings.TrimSpace(cfg.User)
 	if addr == "" {
-		return "iLO-KVM"
+		return "Firstlight"
 	}
 	if user == "" {
-		return "iLO-KVM - " + addr
+		return "Firstlight - " + addr
 	}
-	return "iLO-KVM - " + addr + " (" + user + ")"
+	return "Firstlight - " + addr + " (" + user + ")"
 }
 
 func setupLogger(cfg Config) (*log.Logger, *os.File, error) {
@@ -316,7 +316,7 @@ func setupLogger(cfg Config) (*log.Logger, *os.File, error) {
 	}
 	path := cfg.LogPath
 	if path == "" {
-		path = "iLO-KVM-debug.log"
+		path = "Firstlight-debug.log"
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -645,7 +645,7 @@ func (w *appWindow) pasteClipboard() {
 func (w *appWindow) confirmAndSendPower(option kvm.PowerOption, label string) {
 	result := walk.MsgBox(
 		w.MainWindow,
-		"iLO-KVM Power",
+		"Firstlight Power",
 		fmt.Sprintf("Send power command %q to the server?", label),
 		walk.MsgBoxYesNo|walk.MsgBoxIconWarning|walk.MsgBoxDefButton2,
 	)

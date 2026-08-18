@@ -50,7 +50,7 @@ func ExportBuiltInGerman(jsonPath string) (string, string, error) {
 
 func writeStage(target string, data []byte) (string, error) {
 	for attempt := 0; attempt < 100; attempt++ {
-		path := fmt.Sprintf("%s.ilo-kvm-new-%d-%d", target, os.Getpid(), attempt)
+		path := fmt.Sprintf("%s.firstlight-new-%d-%d", target, os.Getpid(), attempt)
 		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 		if os.IsExist(err) {
 			continue
@@ -82,7 +82,7 @@ func commitPair(jsonStage, jsonTarget, markdownStage, markdownTarget string) err
 	items := []*pairItem{{stage: jsonStage, target: jsonTarget}, {stage: markdownStage, target: markdownTarget}}
 	for index, current := range items {
 		if _, err := os.Stat(current.target); err == nil {
-			current.backup = fmt.Sprintf("%s.ilo-kvm-backup-%d-%d", current.target, os.Getpid(), index)
+			current.backup = fmt.Sprintf("%s.firstlight-backup-%d-%d", current.target, os.Getpid(), index)
 			if _, backupErr := os.Stat(current.backup); backupErr == nil {
 				restoreBackups(items)
 				return fmt.Errorf("backup path already exists: %s", current.backup)

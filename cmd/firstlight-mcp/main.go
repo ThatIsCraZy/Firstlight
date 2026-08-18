@@ -16,8 +16,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"ilo-kvm/internal/console"
-	"ilo-kvm/internal/mcpserver"
+	"firstlight/internal/console"
+	"firstlight/internal/mcpserver"
 )
 
 type options struct {
@@ -33,13 +33,13 @@ const maximumMCPRequestBytes = 1 << 20
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		log.Printf("iLO-KVM-mcp: %v", err)
+		log.Printf("Firstlight-mcp: %v", err)
 		os.Exit(1)
 	}
 }
 
 func run(arguments []string) error {
-	flags := flag.NewFlagSet("iLO-KVM-mcp", flag.ContinueOnError)
+	flags := flag.NewFlagSet("Firstlight-mcp", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	opts := options{}
 	flags.StringVar(&opts.transport, "transport", "stdio", "MCP transport: stdio or http")
@@ -67,7 +67,7 @@ func run(arguments []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	logger := log.New(os.Stderr, "iLO-KVM-mcp: ", log.LstdFlags|log.LUTC)
+	logger := log.New(os.Stderr, "Firstlight-mcp: ", log.LstdFlags|log.LUTC)
 	manager := console.NewManager(ctx, console.ManagerOptions{
 		SessionTTL:     opts.sessionTTL,
 		ConnectTimeout: opts.connectTimeout,

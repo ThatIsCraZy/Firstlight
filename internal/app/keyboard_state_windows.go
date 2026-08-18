@@ -8,7 +8,7 @@ import (
 	"github.com/lxn/walk"
 	"github.com/lxn/win"
 
-	"ilo-kvm/internal/kvm"
+	"firstlight/internal/kvm"
 )
 
 // resetKeyboardStateLocked forgets every locally tracked key. Callers must hold

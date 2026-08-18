@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"ilo-kvm/internal/ilo"
-	"ilo-kvm/internal/kvm"
+	"firstlight/internal/ilo"
+	"firstlight/internal/kvm"
 )
 
 func TestDecodeServerUpdate(t *testing.T) {

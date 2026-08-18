@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"ilo-kvm/internal/ilo"
-	"ilo-kvm/internal/keyboardmap"
-	"ilo-kvm/internal/kvm"
+	"firstlight/internal/ilo"
+	"firstlight/internal/keyboardmap"
+	"firstlight/internal/kvm"
 )
 
 const connectionPollInterval = 500 * time.Millisecond

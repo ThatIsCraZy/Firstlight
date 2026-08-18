@@ -15,9 +15,9 @@ import (
 	decl "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
 
-	"ilo-kvm/internal/ilo"
-	"ilo-kvm/internal/kvm"
-	"ilo-kvm/internal/vmedia"
+	"firstlight/internal/ilo"
+	"firstlight/internal/kvm"
+	"firstlight/internal/vmedia"
 )
 
 const connectionPollInterval = 500 * time.Millisecond

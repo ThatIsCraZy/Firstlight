@@ -9,7 +9,7 @@ import (
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
 
-	"ilo-kvm/internal/uiicon"
+	"firstlight/internal/uiicon"
 )
 
 func RunLauncher(ctx context.Context, initial Fields, connect func(Fields) error) error {
@@ -69,7 +69,7 @@ func RunLauncher(ctx context.Context, initial Fields, connect func(Fields) error
 		}
 		loginBtn.SetEnabled(false)
 		if err := connect(fields); err != nil {
-			walk.MsgBox(mw, "iLO-KVM login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
+			walk.MsgBox(mw, "Firstlight login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
 		}
 		loginBtn.SetEnabled(true)
 	}
@@ -81,11 +81,11 @@ func RunLauncher(ctx context.Context, initial Fields, connect func(Fields) error
 			Password: passLE.Text(),
 		}
 		if fields.Addr == "" || fields.User == "" || fields.Password == "" {
-			walk.MsgBox(mw, "iLO-KVM login", "Adresse, Name und Passwort sind erforderlich.", walk.MsgBoxOK|walk.MsgBoxIconWarning)
+			walk.MsgBox(mw, "Firstlight login", "Adresse, Name und Passwort sind erforderlich.", walk.MsgBoxOK|walk.MsgBoxIconWarning)
 			return
 		}
 		if err := store.upsert(fields, saveCB.Checked()); err != nil {
-			walk.MsgBox(mw, "iLO-KVM login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
+			walk.MsgBox(mw, "Firstlight login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
 			return
 		}
 		model.reset(store.Entries)
@@ -104,7 +104,7 @@ func RunLauncher(ctx context.Context, initial Fields, connect func(Fields) error
 		}
 		fields := Fields{Addr: strings.TrimSpace(e.Addr), User: strings.TrimSpace(e.User), Password: passLE.Text()}
 		if err := store.upsert(fields, false); err != nil {
-			walk.MsgBox(mw, "iLO-KVM login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
+			walk.MsgBox(mw, "Firstlight login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
 			return
 		}
 		model.reset(store.Entries)
@@ -117,7 +117,7 @@ func RunLauncher(ctx context.Context, initial Fields, connect func(Fields) error
 			return
 		}
 		if err := store.delete(e.Addr, e.User); err != nil {
-			walk.MsgBox(mw, "iLO-KVM login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
+			walk.MsgBox(mw, "Firstlight login", err.Error(), walk.MsgBoxOK|walk.MsgBoxIconError)
 			return
 		}
 		model.reset(store.Entries)
@@ -133,7 +133,7 @@ func RunLauncher(ctx context.Context, initial Fields, connect func(Fields) error
 	}
 	err := MainWindow{
 		AssignTo: &mw,
-		Title:    "iLO-KVM login",
+		Title:    "Firstlight login",
 		Icon:     icon,
 		MinSize:  Size{Width: 720, Height: 260},
 		Size:     Size{Width: 760, Height: 285},

@@ -7,7 +7,7 @@ import (
 
 	"github.com/lxn/walk"
 
-	"ilo-kvm/internal/kvm"
+	"firstlight/internal/kvm"
 )
 
 func TestKeyboardLayoutDefaultUsesPhysicalYZ(t *testing.T) {

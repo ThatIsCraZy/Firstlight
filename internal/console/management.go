@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"ilo-kvm/internal/ilo"
+	"firstlight/internal/ilo"
 )
 
 func (s *Session) ManagementStatus(ctx context.Context) (ManagementStatus, error) {

@@ -8,8 +8,8 @@ import (
 
 	"github.com/lxn/walk"
 
-	"ilo-kvm/internal/keyboardmap"
-	"ilo-kvm/internal/kvm"
+	"firstlight/internal/keyboardmap"
+	"firstlight/internal/kvm"
 )
 
 type keyboardReportSender interface {

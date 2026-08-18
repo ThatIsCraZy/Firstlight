@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"ilo-kvm/internal/console"
-	"ilo-kvm/internal/mcpserver"
+	"firstlight/internal/console"
+	"firstlight/internal/mcpserver"
 )
 
 func TestValidateLoopbackListen(t *testing.T) {

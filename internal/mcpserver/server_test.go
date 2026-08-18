@@ -9,7 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"ilo-kvm/internal/console"
+	"firstlight/internal/console"
 )
 
 func TestServerPublishesExpectedCredentialBoundary(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"ilo-kvm/internal/ilo"
-	"ilo-kvm/internal/kvm"
-	"ilo-kvm/internal/vmedia"
+	"firstlight/internal/ilo"
+	"firstlight/internal/kvm"
+	"firstlight/internal/vmedia"
 )
 
 const virtualMediaConnectTimeout = 30 * time.Second

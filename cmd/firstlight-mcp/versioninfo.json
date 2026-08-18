@@ -9,17 +9,17 @@
 		"FileSubType": "00"
 	},
 	"StringFileInfo": {
-		"CompanyName": "iLO-KVM contributors",
-		"FileDescription": "iLO-KVM MCP bridge",
+		"CompanyName": "Firstlight contributors",
+		"FileDescription": "Firstlight MCP bridge",
 		"FileVersion": "1.1.0.0",
-		"InternalName": "iLO-KVM-mcp.exe",
-		"LegalCopyright": "Copyright (c) 2026 iLO-KVM contributors",
-		"OriginalFilename": "iLO-KVM-mcp.exe",
-		"ProductName": "iLO-KVM",
+		"InternalName": "Firstlight-mcp.exe",
+		"LegalCopyright": "Copyright (c) 2026 Firstlight contributors",
+		"OriginalFilename": "Firstlight-mcp.exe",
+		"ProductName": "Firstlight",
 		"ProductVersion": "1.1.0.0"
 	},
 	"VarFileInfo": {
 		"Translation": { "LangID": "0409", "CharsetID": "04B0" }
 	},
-	"IconPath": "../ilo-kvm/app.ico"
+	"IconPath": "../firstlight/app.ico"
 }

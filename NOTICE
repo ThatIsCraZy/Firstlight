@@ -1,0 +1,46 @@
+Firstlight
+Copyright 2026 Benjamin Dittmaier
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full license text.
+
+--------------------------------------------------------------------------------
+Non-affiliation and trademark notice
+--------------------------------------------------------------------------------
+
+Firstlight is an independent community open-source project. It is not
+affiliated with, sponsored by, endorsed by, authorized by, or otherwise
+connected to Hewlett Packard Enterprise Development LP ("HPE"). It is not an
+official HPE product, and HPE does not provide support for it.
+
+"HPE", "Hewlett Packard Enterprise", "Integrated Lights-Out", "iLO",
+"ProLiant" and "HPLOCONS" are trademarks or registered trademarks of Hewlett
+Packard Enterprise Development LP. All rights in those marks remain with their
+owner. Firstlight refers to them only descriptively, to identify the systems
+this software interoperates with, as permitted by Article 14 of Regulation (EU)
+2017/1001 and Section 23 of the German Trade Mark Act (MarkenG). No claim to
+those marks is made, and no commercial connection to their owner is implied.
+
+Per Section 6 of the Apache License, Version 2.0, this license grants no
+permission to use the trade names, trademarks, service marks or product names
+of any licensor or of any third party named above.
+
+--------------------------------------------------------------------------------
+Interoperability information
+--------------------------------------------------------------------------------
+
+Firstlight is an independently written client. It contains no source code,
+binaries, resources or artwork originating from HPE or from any HPE client
+software. Its description of the iLO Integrated Remote Console wire protocol
+was obtained by analysing the protocol's observable behaviour for the sole
+purpose of achieving interoperability with iLO management processors, as
+permitted by Article 6 of Directive 2009/24/EC and Section 69e of the German
+Copyright Act (UrhG).
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+This product includes third-party software. Their copyright notices and
+license terms are reproduced in the THIRD_PARTY_NOTICES.md file distributed
+with this product.

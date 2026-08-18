@@ -11,7 +11,11 @@ import (
 	"unsafe"
 )
 
-const credentialDirName = "ACP-ILO-KVM"
+const credentialDirName = "Firstlight"
+
+// Credential directories used before the project was renamed. They are read once
+// so that saved logins survive the rename, then rewritten to credentialDirName.
+var legacyCredentialDirNames = []string{"ACP-ILO-KVM"}
 
 var (
 	crypt32           = syscall.NewLazyDLL("crypt32.dll")
@@ -81,31 +85,38 @@ func defaultCredentialPath() (string, error) {
 	return filepath.Join(base, credentialDirName, "cred.json"), nil
 }
 
-func legacyCredentialPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
+func legacyCredentialPaths() []string {
+	var paths []string
+	if exe, err := os.Executable(); err == nil {
+		paths = append(paths, filepath.Join(filepath.Dir(exe), "cred.json"))
 	}
-	return filepath.Join(filepath.Dir(exe), "cred.json"), nil
+	if base, err := os.UserCacheDir(); err == nil {
+		for _, dir := range legacyCredentialDirNames {
+			paths = append(paths, filepath.Join(base, dir, "cred.json"))
+		}
+	}
+	return paths
 }
 
 func loadLegacyCredentialStore(newPath string) credentialStore {
-	legacyPath, err := legacyCredentialPath()
-	if err != nil || filepath.Clean(legacyPath) == filepath.Clean(newPath) {
-		return credentialStore{}
+	for _, legacyPath := range legacyCredentialPaths() {
+		if filepath.Clean(legacyPath) == filepath.Clean(newPath) {
+			continue
+		}
+		b, err := os.ReadFile(legacyPath)
+		if err != nil {
+			continue
+		}
+		var s credentialStore
+		if err := json.Unmarshal(b, &s); err != nil {
+			continue
+		}
+		if len(s.Entries) > 0 {
+			_ = s.save()
+		}
+		return s
 	}
-	b, err := os.ReadFile(legacyPath)
-	if err != nil {
-		return credentialStore{}
-	}
-	var s credentialStore
-	if err := json.Unmarshal(b, &s); err != nil {
-		return credentialStore{}
-	}
-	if len(s.Entries) > 0 {
-		_ = s.save()
-	}
-	return s
+	return credentialStore{}
 }
 
 func (s credentialStore) find(addr string) (credentialEntry, bool) {

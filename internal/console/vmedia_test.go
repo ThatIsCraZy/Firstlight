@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"ilo-kvm/internal/vmedia"
+	"firstlight/internal/vmedia"
 )
 
 type fakeVirtualMedia struct {
@@ -45,7 +45,7 @@ func TestUnmountISOIsIdempotent(t *testing.T) {
 	session := &Session{
 		isoRoot:          &ISORoot{},
 		virtualMedia:     media,
-		virtualMediaPath: `Z:\Source\vme\installer.iso`,
+		virtualMediaPath: `C:\iso\installer.iso`,
 		virtualMediaName: "installer.iso",
 		virtualMediaSize: 4096,
 	}

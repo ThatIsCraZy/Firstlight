@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ilo-kvm/internal/kvm"
+	"firstlight/internal/kvm"
 )
 
 const defaultInputDelay = 8 * time.Millisecond
