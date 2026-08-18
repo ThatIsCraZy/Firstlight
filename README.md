@@ -61,6 +61,14 @@ The references to HPE and iLO exist only to explain which systems this software 
 - Non-interactive start for scripts and shortcuts via `-addr`, `-name` and `-password`.
 - Accepts the legacy `HPLOCONS` `-lang` argument so existing shortcuts keep working.
 
+### User interface
+
+- Native, GPU-rendered interface built with [Gio](https://gioui.org): no Electron, no bundled browser engine, no web view — the window is drawn directly through Direct3D 11.
+- Light and dark themes follow the Windows app-theme setting and switch live, including the window title bar.
+- Custom widget set in a flat, macOS-inspired style: rounded cards, an in-window menu bar with dropdowns, sheet-style confirmation dialogs, and a two-part status bar showing connection, virtual media, keyboard layout and pointer capture on the left, server power and POST code on the right.
+- Uses the Segoe UI family already present on the system instead of embedding fonts, and honours per-monitor DPI.
+- Keyboard input reaches the remote server only while the pointer is inside the video area, so local window and menu interaction can never leak keystrokes to the console.
+
 ### LLM / automation control (MCP bridge)
 
 - A second, standalone executable exposes the same console stack as Model Context Protocol tools, so an LLM agent can drive an iLO console: open a session, watch the framebuffer, type, press chords, move the mouse, control power, set a one-time boot device and mount or unmount ISO media.
@@ -285,10 +293,16 @@ transitive alike:
 
 | Module | How it is used | License | Copyright holder / authors |
 |---|---|---|---|
-| [`github.com/lxn/walk`](https://github.com/lxn/walk) | Native Windows GUI toolkit | BSD-3-Clause | The Walk Authors |
-| [`github.com/lxn/win`](https://github.com/lxn/win) | Win32 API bindings used by the GUI and input handling | BSD-3-Clause | The win Authors |
+| [`gioui.org`](https://gioui.org) | GPU-rendered user interface: window, layout, text shaping and the custom widget set | Unlicense OR MIT | The Gio Authors |
+| [`gioui.org/shader`](https://git.sr.ht/~eliasnaur/gio-shaders) | Precompiled shaders used by Gio's renderer | Unlicense OR MIT | The Gio Authors |
+| [`github.com/go-text/typesetting`](https://github.com/go-text/typesetting) | Font parsing, shaping and line breaking, via Gio | Unlicense OR BSD-3-Clause | The go-text Authors |
+| [`github.com/lxn/win`](https://github.com/lxn/win) | Win32 API bindings for raw keyboard input, window chrome, the application icon and the file dialogs | BSD-3-Clause | The win Authors |
 | [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) | MCP server, tool schemas, stdio and stateless Streamable HTTP | Apache-2.0 (with MIT transition notice) | The Go MCP SDK Authors |
 | [`golang.org/x/sys`](https://pkg.go.dev/golang.org/x/sys) | Low-level Windows system interfaces | BSD-3-Clause | The Go Authors |
+| [`golang.org/x/image`](https://pkg.go.dev/golang.org/x/image) | Image resampling for the application icon, and font data via Gio | BSD-3-Clause | The Go Authors |
+| [`golang.org/x/text`](https://pkg.go.dev/golang.org/x/text) | Unicode segmentation used by Gio's text layout | BSD-3-Clause | The Go Authors |
+| [`golang.org/x/exp`](https://pkg.go.dev/golang.org/x/exp) | Generic helpers used by Gio and the typesetting stack | BSD-3-Clause | The Go Authors |
+| [`golang.org/x/net`](https://pkg.go.dev/golang.org/x/net) | HTTP/2 support in the MCP SDK's HTTP transport | BSD-3-Clause | The Go Authors |
 | [`github.com/google/jsonschema-go`](https://github.com/google/jsonschema-go) | JSON Schema generation and validation for MCP tool arguments, via the MCP SDK | MIT | JSON Schema Go Project Authors |
 | [`github.com/segmentio/encoding`](https://github.com/segmentio/encoding) | Fast JSON encoding, via the MCP SDK | MIT | Segment.io, Inc. |
 | [`github.com/segmentio/asm`](https://github.com/segmentio/asm) | SIMD helpers used by `segmentio/encoding` | MIT-0 | Segment |
@@ -296,7 +310,7 @@ transitive alike:
 | [`golang.org/x/oauth2`](https://pkg.go.dev/golang.org/x/oauth2) | OAuth 2.0 client support in the MCP SDK's HTTP transport | BSD-3-Clause | The Go Authors |
 | [`golang.org/x/sync`](https://pkg.go.dev/golang.org/x/sync) | Concurrency primitives used by the MCP SDK | BSD-3-Clause | The Go Authors |
 | [`golang.org/x/time`](https://pkg.go.dev/golang.org/x/time) | Rate limiting used by the MCP SDK | BSD-3-Clause | The Go Authors |
-| [`gopkg.in/Knetic/govaluate.v3`](https://github.com/Knetic/govaluate) | Expression evaluation, required by Walk's data binding | MIT | George Lester |
+| [`gopkg.in/Knetic/govaluate.v3`](https://github.com/Knetic/govaluate) | Expression evaluation, via the MCP SDK | MIT | George Lester |
 
 Exact versions are pinned in [`go.mod`](go.mod) and cryptographically verified by
 [`go.sum`](go.sum). The complete copyright notices and license texts for all of the

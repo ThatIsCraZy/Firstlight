@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lxn/walk"
-
 	"firstlight/internal/keyboardmap"
 	"firstlight/internal/kvm"
 )
@@ -53,7 +51,7 @@ func TestGenericVirtualKeyMappingFromJSON(t *testing.T) {
 	if len(loaded.Warnings) != 0 {
 		t.Fatalf("load warnings=%v", loaded.Warnings)
 	}
-	report := keyboardReportForRegistry(loaded.Registry, keyboardLayout("extended"), keys(walk.Key(0x7c)))
+	report := keyboardReportForRegistry(loaded.Registry, keyboardLayout("extended"), keys(Key(0x7c)))
 	if want := kvm.KeyboardReport(0, 0x68); report != want {
 		t.Fatalf("generic F13 report=%x want=%x", report, want)
 	}

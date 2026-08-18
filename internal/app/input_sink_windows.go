@@ -5,49 +5,40 @@ package app
 import (
 	"syscall"
 
+	"gioui.org/io/system"
 	"github.com/lxn/win"
 )
 
-func (w *appWindow) installInputSink() {
-	if w.MainWindow != nil {
-		w.installWindowInputSink(w.MainWindow.Handle(), "main input sink", &w.mainWndProc, &w.oldMainWndProc)
-	}
-	if w.canvas != nil {
-		w.installWindowInputSink(w.canvas.Handle(), "input sink", &w.canvasWndProc, &w.oldCanvasWndProc)
-	}
-}
+func closeAction() system.Action { return system.ActionClose }
 
-func (w *appWindow) uninstallInputSink() {
-	if w.canvas != nil {
-		w.uninstallWindowInputSink(w.canvas.Handle(), "input sink", &w.canvasWndProc, &w.oldCanvasWndProc)
-	}
-	if w.MainWindow != nil {
-		w.uninstallWindowInputSink(w.MainWindow.Handle(), "main input sink", &w.mainWndProc, &w.oldMainWndProc)
-	}
-}
-
-func (w *appWindow) installWindowInputSink(hwnd win.HWND, label string, callback, previous *uintptr) {
-	if hwnd == 0 || *callback != 0 {
+func focusWindow(hwnd uintptr) {
+	if hwnd == 0 {
 		return
 	}
-	*callback = syscall.NewCallback(func(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
-		if result, handled := w.handleInputMessage(msg, wp, lp); handled {
-			return result
-		}
-		return win.CallWindowProc(*previous, hwnd, msg, wp, lp)
-	})
-	*previous = win.SetWindowLongPtr(hwnd, win.GWLP_WNDPROC, *callback)
-	w.logf("%s installed hwnd=0x%x old_proc=0x%x", label, uintptr(hwnd), *previous)
+	win.ShowWindow(win.HWND(hwnd), win.SW_SHOW)
+	win.SetForegroundWindow(win.HWND(hwnd))
 }
 
-func (w *appWindow) uninstallWindowInputSink(hwnd win.HWND, label string, callback, previous *uintptr) {
-	if hwnd == 0 || *callback == 0 || *previous == 0 {
+// installInputSink subclasses the Gio window procedure so raw keyboard and
+// mouse messages reach the KVM path before Gio processes them.
+func (w *appWindow) installInputSink(hwnd uintptr) {
+	if hwnd == 0 || w.oldWndProc != 0 {
 		return
 	}
-	win.SetWindowLongPtr(hwnd, win.GWLP_WNDPROC, *previous)
-	w.logf("%s uninstalled hwnd=0x%x", label, uintptr(hwnd))
-	*callback = 0
-	*previous = 0
+	if w.wndProc == 0 {
+		w.wndProc = syscall.NewCallback(func(hwnd win.HWND, msg uint32, wp, lp uintptr) uintptr {
+			if result, handled := w.handleInputMessage(msg, wp, lp); handled {
+				return result
+			}
+			prev := w.oldWndProc
+			if prev == 0 {
+				return win.DefWindowProc(hwnd, msg, wp, lp)
+			}
+			return win.CallWindowProc(prev, hwnd, msg, wp, lp)
+		})
+	}
+	w.oldWndProc = win.SetWindowLongPtr(win.HWND(hwnd), win.GWLP_WNDPROC, w.wndProc)
+	w.logf("input sink installed hwnd=0x%x old_proc=0x%x", hwnd, w.oldWndProc)
 }
 
 func (w *appWindow) handleInputMessage(msg uint32, wp, lp uintptr) (uintptr, bool) {
@@ -60,6 +51,11 @@ func (w *appWindow) handleInputMessage(msg uint32, wp, lp uintptr) (uintptr, boo
 		return 0, w.handleRawKey(uint32(wp), uint32((lp>>16)&0xff), lp&(1<<24) != 0, false)
 	case win.WM_CHAR, win.WM_SYSCHAR:
 		return 0, true
+	case win.WM_ACTIVATE:
+		if wp&0xffff == 0 { // WA_INACTIVE
+			w.releaseCapture()
+		}
+		return 0, false
 	default:
 		return 0, false
 	}

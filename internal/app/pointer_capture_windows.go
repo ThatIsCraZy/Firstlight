@@ -4,18 +4,20 @@ package app
 
 import "github.com/lxn/win"
 
+// pointerInsideCanvas reports whether the cursor is over the canvas area of
+// the focused session window; x/y are window client coordinates.
 func (w *appWindow) pointerInsideCanvas() (bool, int, int) {
-	if w.MainWindow == nil || w.canvas == nil {
-		return false, 0, 0
-	}
-	main := w.MainWindow.Handle()
-	canvas := w.canvas.Handle()
-	if main == 0 || canvas == 0 {
+	w.mu.Lock()
+	hwnd := win.HWND(w.hwnd)
+	rect := w.canvasRect
+	blocked := w.uiBlocked
+	w.mu.Unlock()
+	if hwnd == 0 || blocked || rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return false, 0, 0
 	}
 
 	fg := win.GetForegroundWindow()
-	if fg != main && !win.IsChild(main, fg) {
+	if fg != hwnd && !win.IsChild(hwnd, fg) {
 		return false, 0, 0
 	}
 
@@ -23,12 +25,12 @@ func (w *appWindow) pointerInsideCanvas() (bool, int, int) {
 	if !win.GetCursorPos(&pt) {
 		return false, 0, 0
 	}
-	var rect win.RECT
-	if !win.GetWindowRect(canvas, &rect) {
+	if !win.ScreenToClient(hwnd, &pt) {
 		return false, 0, 0
 	}
-	if pt.X < rect.Left || pt.Y < rect.Top || pt.X >= rect.Right || pt.Y >= rect.Bottom {
+	x, y := int(pt.X), int(pt.Y)
+	if x < rect.Min.X || y < rect.Min.Y || x >= rect.Max.X || y >= rect.Max.Y {
 		return false, 0, 0
 	}
-	return true, int(pt.X - rect.Left), int(pt.Y - rect.Top)
+	return true, x, y
 }

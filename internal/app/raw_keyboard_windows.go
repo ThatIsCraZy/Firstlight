@@ -3,7 +3,6 @@
 package app
 
 import (
-	"github.com/lxn/walk"
 	"github.com/lxn/win"
 )
 
@@ -17,17 +16,22 @@ func (w *appWindow) handleRawKey(vk, scan uint32, extended, down bool) bool {
 	}
 
 	hpVK := normalizeHPVK(vk, scan, extended)
-	key := walkKeyForVK(hpVK)
+	key := keyForVK(hpVK)
+	w.input.Lock()
 	if hpVK < 256 {
 		w.rawInput = true
 		w.rawPressed[byte(hpVK)] = down
 	}
 	if down {
-		w.logf("raw key down vk=%d hp_vk=%d scan=%d extended=%v key=%d", vk, hpVK, scan, extended, key)
 		w.pressed[key] = true
 	} else {
-		w.logf("raw key up vk=%d hp_vk=%d scan=%d extended=%v key=%d", vk, hpVK, scan, extended, key)
 		delete(w.pressed, key)
+	}
+	w.input.Unlock()
+	if down {
+		w.logf("raw key down vk=%d hp_vk=%d scan=%d extended=%v key=%d", vk, hpVK, scan, extended, key)
+	} else {
+		w.logf("raw key up vk=%d hp_vk=%d scan=%d extended=%v key=%d", vk, hpVK, scan, extended, key)
 	}
 	w.sendKeyboard()
 	return true
@@ -98,22 +102,22 @@ func normalizeHPVK(vk, scan uint32, extended bool) uint32 {
 	return vk
 }
 
-func walkKeyForVK(vk uint32) walk.Key {
+func keyForVK(vk uint32) Key {
 	switch vk {
 	case win.VK_LSHIFT:
-		return walk.KeyLShift
+		return KeyLShift
 	case win.VK_RSHIFT:
-		return walk.KeyRShift
+		return KeyRShift
 	case win.VK_LCONTROL:
-		return walk.KeyLControl
+		return KeyLControl
 	case win.VK_RCONTROL:
-		return walk.KeyRControl
+		return KeyRControl
 	case win.VK_LMENU:
-		return walk.KeyLAlt
+		return KeyLAlt
 	case win.VK_RMENU:
-		return walk.KeyRAlt
+		return KeyRAlt
 	}
-	return walk.Key(vk)
+	return Key(vk)
 }
 
 func hpKeyboardReport(pressed [256]bool) [10]byte {

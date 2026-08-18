@@ -9,14 +9,12 @@ import (
 	"net"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/lxn/walk"
-	decl "github.com/lxn/walk/declarative"
-	"github.com/lxn/win"
 
 	"firstlight/internal/ilo"
 	"firstlight/internal/kvm"
+	"firstlight/internal/ui"
 	"firstlight/internal/vmedia"
 )
 
@@ -47,14 +45,14 @@ func (w *appWindow) connectConfigured() {
 			w.connected = false
 			w.logf("connect failed: %v", err)
 			w.mu.Unlock()
-			w.ui(w.updateChrome)
+			w.invalidate()
 			return
 		}
 		w.status = "Connected."
 		w.connected = true
 		w.logf("connect succeeded")
 		w.mu.Unlock()
-		w.ui(w.updateChrome)
+		w.invalidate()
 	}(w.cfg)
 }
 
@@ -168,7 +166,7 @@ func (w *appWindow) connect(cfg Config) error {
 		w.vmISOPath = cfg.ISOPath
 	}
 	w.captured, w.inputReady = false, false
-	w.resetCapturedInputLocked()
+	w.resetCapturedInput()
 	w.mu.Unlock()
 	handoff = true
 	w.logf("kvm connected host=%q port=%d protocol=%d command=%d", info.Host, info.Port, info.ProtocolVersion, info.Command)
@@ -231,7 +229,7 @@ func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
 					w.logf("tx keyboard initial-all-keys-up")
 					_ = conn.SendAllKeysUp()
 				}
-				w.ui(w.repaint)
+				w.markFrameDirty()
 			}
 		}
 		if err != nil {
@@ -254,7 +252,7 @@ func (w *appWindow) handleDisconnect(status string) {
 	w.connected = false
 	w.captured = false
 	w.inputReady = false
-	w.resetCapturedInputLocked()
+	w.resetCapturedInput()
 	vm, cmdConn, shareLeader = w.vm, w.cmdConn, w.shareLeader
 	w.vm, w.cmdConn, w.shareLeader = nil, nil, nil
 	w.sharedSession = false
@@ -272,7 +270,7 @@ func (w *appWindow) handleDisconnect(status string) {
 	if shareLeader != nil {
 		_ = shareLeader.Close()
 	}
-	w.ui(w.updateChrome)
+	w.invalidate()
 }
 
 func (w *appWindow) connectCommandChannel(host, sessionKey string, rc *ilo.RCInfo) (*kvm.Conn, kvm.Status, error) {
@@ -512,11 +510,7 @@ func (w *appWindow) handleLegacyShareRequest(packet kvm.CommandPacket) {
 		w.logf("legacy share request cannot be handled: command or leader connection unavailable")
 		return
 	}
-	accepted := false
-	var promptErr error
-	w.ui(func() {
-		accepted, promptErr = confirmLegacyShare(w.MainWindow, request)
-	})
+	accepted, promptErr := w.confirmLegacyShare(request)
 	if promptErr != nil {
 		w.logf("legacy share request prompt failed peer=%s: %v", request.Address, promptErr)
 	}
@@ -549,53 +543,33 @@ func legacyShareDecisionTimeout(flag uint16) time.Duration {
 	return d
 }
 
-func confirmLegacyShare(owner walk.Form, request legacyShareRequest) (bool, error) {
+// confirmLegacyShare shows the Allow/Deny modal for a legacy shared-session
+// join request and blocks until the user decides or the timeout denies it.
+func (w *appWindow) confirmLegacyShare(request legacyShareRequest) (bool, error) {
 	timeout := legacyShareDecisionTimeout(request.Timeout)
-	var dialog *walk.Dialog
-	var allowButton, denyButton *walk.PushButton
-	view := decl.Dialog{
-		AssignTo:      &dialog,
-		Title:         "Shared remote-console request",
-		FixedSize:     true,
-		MinSize:       decl.Size{Width: 480, Height: 150},
-		DefaultButton: &denyButton,
-		CancelButton:  &denyButton,
-		Layout:        decl.VBox{},
-		Children: []decl.Widget{
-			decl.TextLabel{
-				MinSize: decl.Size{Width: 440},
-				Text: fmt.Sprintf(
-					"Allow %s at %s to join this remote-console session?\n\nThe request will be denied automatically after %d seconds.",
-					request.User, request.Address, int(timeout/time.Second)),
-			},
-			decl.Composite{
-				Layout: decl.HBox{},
-				Children: []decl.Widget{
-					decl.HSpacer{},
-					decl.PushButton{
-						AssignTo:  &allowButton,
-						Text:      "Allow",
-						OnClicked: func() { dialog.Close(walk.DlgCmdYes) },
-					},
-					decl.PushButton{
-						AssignTo:  &denyButton,
-						Text:      "Deny",
-						OnClicked: func() { dialog.Close(walk.DlgCmdNo) },
-					},
-				},
-			},
-		},
-	}
-	if err := view.Create(owner); err != nil {
-		return false, err
-	}
-	defer dialog.Dispose()
-	timer := time.AfterFunc(timeout, func() {
-		win.PostMessage(denyButton.Handle(), win.BM_CLICK, 0, 0)
+	result := make(chan bool, 1)
+	var once sync.Once
+	decide := func(v bool) { once.Do(func() { result <- v }) }
+	w.ui(func() {
+		w.modal.Show("Shared remote-console request",
+			fmt.Sprintf(
+				"Allow %s at %s to join this remote-console session?\n\nThe request will be denied automatically after %d seconds.",
+				request.User, request.Address, int(timeout/time.Second)),
+			ui.ModalButton{Label: "Deny", Style: ui.ButtonRegular, Action: func() { decide(false) }},
+			ui.ModalButton{Label: "Allow", Style: ui.ButtonPrimary, Action: func() { decide(true) }},
+		)
 	})
-	result := dialog.Run()
-	timer.Stop()
-	return result == walk.DlgCmdYes, nil
+	timer := time.AfterFunc(timeout, func() {
+		decide(false)
+		w.ui(func() { w.modal.Hide() })
+	})
+	defer timer.Stop()
+	select {
+	case v := <-result:
+		return v, nil
+	case <-w.ctx.Done():
+		return false, w.ctx.Err()
+	}
 }
 
 func (w *appWindow) setServerPower(on bool) {
@@ -607,7 +581,7 @@ func (w *appWindow) setServerPower(on bool) {
 	}
 	w.logf("server power updated power=%s", w.serverPower)
 	w.mu.Unlock()
-	w.ui(w.updateChrome)
+	w.invalidate()
 }
 
 func (w *appWindow) setPostCode(code string) {
@@ -615,5 +589,5 @@ func (w *appWindow) setPostCode(code string) {
 	w.postCode = code
 	w.logf("server post updated post=%s", w.postCode)
 	w.mu.Unlock()
-	w.ui(w.updateChrome)
+	w.invalidate()
 }

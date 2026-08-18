@@ -5,7 +5,6 @@ package app
 import (
 	"testing"
 
-	"github.com/lxn/walk"
 	"github.com/lxn/win"
 )
 
@@ -38,15 +37,15 @@ func TestNormalizeHPVKDistinguishesModifiersAndNumpadNavigation(t *testing.T) {
 }
 
 func TestWalkKeyForVKUsesDistinctModifierKeys(t *testing.T) {
-	tests := map[uint32]walk.Key{
-		win.VK_LSHIFT: walk.KeyLShift, win.VK_RSHIFT: walk.KeyRShift,
-		win.VK_LCONTROL: walk.KeyLControl, win.VK_RCONTROL: walk.KeyRControl,
-		win.VK_LMENU: walk.KeyLAlt, win.VK_RMENU: walk.KeyRAlt,
-		'A': walk.KeyA,
+	tests := map[uint32]Key{
+		win.VK_LSHIFT: KeyLShift, win.VK_RSHIFT: KeyRShift,
+		win.VK_LCONTROL: KeyLControl, win.VK_RCONTROL: KeyRControl,
+		win.VK_LMENU: KeyLAlt, win.VK_RMENU: KeyRAlt,
+		'A': KeyA,
 	}
 	for vk, want := range tests {
-		if got := walkKeyForVK(vk); got != want {
-			t.Fatalf("walkKeyForVK(%d)=%d want=%d", vk, got, want)
+		if got := keyForVK(vk); got != want {
+			t.Fatalf("keyForVK(%d)=%d want=%d", vk, got, want)
 		}
 	}
 }

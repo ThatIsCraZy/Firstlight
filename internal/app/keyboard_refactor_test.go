@@ -8,16 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lxn/walk"
-
 	"firstlight/internal/keyboardmap"
 	"firstlight/internal/kvm"
 )
 
 func TestWalkKeyDefinitionsMatchUSBase(t *testing.T) {
 	registry := keyboardmap.BuiltInRegistry()
-	seenInputs := make(map[string]walk.Key, len(walkKeys))
-	for key, definition := range walkKeys {
+	seenInputs := make(map[string]Key, len(vkKeys))
+	for key, definition := range vkKeys {
 		if definition.input == "" || definition.hid == 0 {
 			t.Fatalf("key %#x has incomplete definition: %+v", key, definition)
 		}
@@ -35,7 +33,7 @@ func TestWalkKeyDefinitionsMatchUSBase(t *testing.T) {
 
 func TestResetInputState(t *testing.T) {
 	w := &appWindow{
-		pressed:       keys(walk.KeyA, walk.KeyShift),
+		pressed:       keys(KeyA, KeyShift),
 		rawInput:      true,
 		lastKeyReport: kvm.KeyboardReport(2, 4),
 		nextBackspace: time.Now(),
@@ -51,7 +49,7 @@ func TestResetInputState(t *testing.T) {
 		t.Fatalf("keyboard-only reset changed mouse buttons to %d", w.mouseButtons)
 	}
 
-	w.resetCapturedInputLocked()
+	w.resetCapturedInput()
 	if w.mouseButtons != 0 {
 		t.Fatalf("captured input reset left mouse buttons=%d", w.mouseButtons)
 	}

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	gioapp "gioui.org/app"
+
 	"firstlight/internal/app"
 	"firstlight/internal/ilo"
 	"firstlight/internal/keyboardmap"
@@ -44,6 +46,16 @@ func main() {
 	if cfg.Share && cfg.Seize {
 		log.Fatal("-share and -seize are mutually exclusive")
 	}
+
+	// Gio requires the OS main thread; the application logic runs beside it
+	// and terminates the process when the last window is done.
+	go func() {
+		os.Exit(run(cfg))
+	}()
+	gioapp.Main()
+}
+
+func run(cfg app.Config) int {
 	if cfg.Addr == "" || cfg.User == "" || cfg.Password == "" {
 		base := cfg
 		sessions := map[string]*app.SessionWindow{}
@@ -71,26 +83,30 @@ func main() {
 			return nil
 		})
 		if err != nil {
-			log.Fatal(err)
+			fmt.Fprintln(os.Stderr, err)
+			return 1
 		}
 		for _, session := range sessions {
 			session.Close()
 		}
-		return
+		return 0
 	}
 
 	if cfg.Addr != "" {
 		host, _, err := ilo.ParseAddress(cfg.Addr)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Fprintln(os.Stderr, err)
+			return 1
 		}
 		if strings.TrimSpace(host) == "" {
-			log.Fatal("-addr must contain a host")
+			fmt.Fprintln(os.Stderr, "-addr must contain a host")
+			return 1
 		}
 	}
 
 	if err := app.Run(context.Background(), cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

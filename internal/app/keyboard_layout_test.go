@@ -5,19 +5,17 @@ package app
 import (
 	"testing"
 
-	"github.com/lxn/walk"
-
 	"firstlight/internal/kvm"
 )
 
 func TestKeyboardLayoutDefaultUsesPhysicalYZ(t *testing.T) {
 	tests := []struct {
 		name string
-		key  walk.Key
+		key  Key
 		hid  byte
 	}{
-		{name: "Y key sends physical Z position", key: walk.KeyY, hid: 29},
-		{name: "Z key sends physical Y position", key: walk.KeyZ, hid: 28},
+		{name: "Y key sends physical Z position", key: KeyY, hid: 29},
+		{name: "Z key sends physical Y position", key: KeyZ, hid: 28},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -45,7 +43,7 @@ func TestKeyboardLayoutDefaultRawUsesPhysicalYZ(t *testing.T) {
 }
 
 func TestKeyboardLayoutDefaultKeepsShiftOEMMinus(t *testing.T) {
-	got := keyboardReportForLayout(keyboardLayoutDefault, keys(walk.KeyShift, walk.KeyOEMMinus))
+	got := keyboardReportForLayout(keyboardLayoutDefault, keys(KeyShift, KeyOEMMinus))
 	want := kvm.KeyboardReport(2, 56)
 	if got != want {
 		t.Fatalf("default shift OEMMinus report=%x want=%x", got, want)
@@ -66,11 +64,11 @@ func TestKeyboardLayoutDefaultRawKeepsShiftOEMMinus(t *testing.T) {
 func TestKeyboardLayoutForceGermanLeavesLettersUnchanged(t *testing.T) {
 	tests := []struct {
 		name string
-		key  walk.Key
+		key  Key
 		hid  byte
 	}{
-		{name: "Y", key: walk.KeyY, hid: 28},
-		{name: "Z", key: walk.KeyZ, hid: 29},
+		{name: "Y", key: KeyY, hid: 28},
+		{name: "Z", key: KeyZ, hid: 29},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,23 +84,23 @@ func TestKeyboardLayoutForceGermanLeavesLettersUnchanged(t *testing.T) {
 func TestKeyboardLayoutForceGermanShiftSymbols(t *testing.T) {
 	tests := []struct {
 		name string
-		key  walk.Key
+		key  Key
 		want [10]byte
 	}{
-		{name: "quote", key: walk.Key2, want: kvm.KeyboardReport(2, 52)},
-		{name: "slash", key: walk.Key7, want: kvm.KeyboardReport(0, 56)},
-		{name: "paren-left", key: walk.Key8, want: kvm.KeyboardReport(2, 38)},
-		{name: "underscore", key: walk.KeyOEMMinus, want: kvm.KeyboardReport(2, 45)},
-		{name: "asterisk", key: walk.KeyOEMPlus, want: kvm.KeyboardReport(2, 37)},
-		{name: "question", key: walk.KeyOEM4, want: kvm.KeyboardReport(2, 56)},
-		{name: "backtick", key: walk.KeyOEM6, want: kvm.KeyboardReport(0, 53)},
-		{name: "apostrophe", key: walk.KeyOEM2, want: kvm.KeyboardReport(0, 52)},
-		{name: "colon", key: walk.KeyOEMPeriod, want: kvm.KeyboardReport(2, 51)},
-		{name: "greater-than", key: walk.KeyOEM102, want: kvm.KeyboardReport(2, 55)},
+		{name: "quote", key: Key2, want: kvm.KeyboardReport(2, 52)},
+		{name: "slash", key: Key7, want: kvm.KeyboardReport(0, 56)},
+		{name: "paren-left", key: Key8, want: kvm.KeyboardReport(2, 38)},
+		{name: "underscore", key: KeyOEMMinus, want: kvm.KeyboardReport(2, 45)},
+		{name: "asterisk", key: KeyOEMPlus, want: kvm.KeyboardReport(2, 37)},
+		{name: "question", key: KeyOEM4, want: kvm.KeyboardReport(2, 56)},
+		{name: "backtick", key: KeyOEM6, want: kvm.KeyboardReport(0, 53)},
+		{name: "apostrophe", key: KeyOEM2, want: kvm.KeyboardReport(0, 52)},
+		{name: "colon", key: KeyOEMPeriod, want: kvm.KeyboardReport(2, 51)},
+		{name: "greater-than", key: KeyOEM102, want: kvm.KeyboardReport(2, 55)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(walk.KeyShift, tt.key))
+			got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(KeyShift, tt.key))
 			if got != tt.want {
 				t.Fatalf("report=%x want=%x", got, tt.want)
 			}
@@ -113,14 +111,14 @@ func TestKeyboardLayoutForceGermanShiftSymbols(t *testing.T) {
 func TestKeyboardLayoutForceGermanPlainSymbols(t *testing.T) {
 	tests := []struct {
 		name string
-		key  walk.Key
+		key  Key
 		want [10]byte
 	}{
-		{name: "less-than", key: walk.KeyOEM102, want: kvm.KeyboardReport(2, 54)},
-		{name: "hash", key: walk.KeyOEM2, want: kvm.KeyboardReport(2, 32)},
-		{name: "plus", key: walk.KeyOEMPlus, want: kvm.KeyboardReport(2, 46)},
-		{name: "plain-ss-unsupported", key: walk.KeyOEM4, want: kvm.KeyboardReport(0)},
-		{name: "plain-acute-unsupported", key: walk.KeyOEM6, want: kvm.KeyboardReport(0)},
+		{name: "less-than", key: KeyOEM102, want: kvm.KeyboardReport(2, 54)},
+		{name: "hash", key: KeyOEM2, want: kvm.KeyboardReport(2, 32)},
+		{name: "plus", key: KeyOEMPlus, want: kvm.KeyboardReport(2, 46)},
+		{name: "plain-ss-unsupported", key: KeyOEM4, want: kvm.KeyboardReport(0)},
+		{name: "plain-acute-unsupported", key: KeyOEM6, want: kvm.KeyboardReport(0)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,20 +133,20 @@ func TestKeyboardLayoutForceGermanPlainSymbols(t *testing.T) {
 func TestKeyboardLayoutForceGermanAltGrSymbols(t *testing.T) {
 	tests := []struct {
 		name string
-		key  walk.Key
+		key  Key
 		want [10]byte
 	}{
-		{name: "at", key: walk.KeyQ, want: kvm.KeyboardReport(2, 31)},
-		{name: "brace-left", key: walk.Key7, want: kvm.KeyboardReport(2, 47)},
-		{name: "bracket-left", key: walk.Key8, want: kvm.KeyboardReport(0, 47)},
-		{name: "tilde", key: walk.KeyOEMPlus, want: kvm.KeyboardReport(2, 53)},
-		{name: "backslash-ss", key: walk.KeyOEM4, want: kvm.KeyboardReport(0, 49)},
-		{name: "backslash", key: walk.KeyOEMMinus, want: kvm.KeyboardReport(0, 49)},
-		{name: "pipe", key: walk.KeyOEM102, want: kvm.KeyboardReport(2, 49)},
+		{name: "at", key: KeyQ, want: kvm.KeyboardReport(2, 31)},
+		{name: "brace-left", key: Key7, want: kvm.KeyboardReport(2, 47)},
+		{name: "bracket-left", key: Key8, want: kvm.KeyboardReport(0, 47)},
+		{name: "tilde", key: KeyOEMPlus, want: kvm.KeyboardReport(2, 53)},
+		{name: "backslash-ss", key: KeyOEM4, want: kvm.KeyboardReport(0, 49)},
+		{name: "backslash", key: KeyOEMMinus, want: kvm.KeyboardReport(0, 49)},
+		{name: "pipe", key: KeyOEM102, want: kvm.KeyboardReport(2, 49)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(walk.KeyRAlt, tt.key))
+			got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(KeyRAlt, tt.key))
 			if got != tt.want {
 				t.Fatalf("report=%x want=%x", got, tt.want)
 			}
@@ -157,7 +155,7 @@ func TestKeyboardLayoutForceGermanAltGrSymbols(t *testing.T) {
 }
 
 func TestKeyboardLayoutDefaultAltGrSymbols(t *testing.T) {
-	got := keyboardReportForLayout(keyboardLayoutDefault, keys(walk.KeyRAlt, walk.KeyQ))
+	got := keyboardReportForLayout(keyboardLayoutDefault, keys(KeyRAlt, KeyQ))
 	want := kvm.KeyboardReport(2, 31)
 	if got != want {
 		t.Fatalf("default altgr+q report=%x want=%x", got, want)
@@ -165,7 +163,7 @@ func TestKeyboardLayoutDefaultAltGrSymbols(t *testing.T) {
 }
 
 func TestKeyboardLayoutAltGrWhenWindowsReportsCtrlAlt(t *testing.T) {
-	got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(walk.KeyControl, walk.KeyAlt, walk.KeyQ))
+	got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(KeyControl, KeyAlt, KeyQ))
 	want := kvm.KeyboardReport(2, 31)
 	if got != want {
 		t.Fatalf("ctrl+alt+q altgr report=%x want=%x", got, want)
@@ -175,11 +173,11 @@ func TestKeyboardLayoutAltGrWhenWindowsReportsCtrlAlt(t *testing.T) {
 func TestKeyboardLayoutModifierOnlyReportsAllKeysUp(t *testing.T) {
 	tests := []struct {
 		name string
-		keys []walk.Key
+		keys []Key
 	}{
-		{name: "right alt only", keys: []walk.Key{walk.KeyRAlt}},
-		{name: "ctrl alt only", keys: []walk.Key{walk.KeyControl, walk.KeyAlt}},
-		{name: "shift only", keys: []walk.Key{walk.KeyShift}},
+		{name: "right alt only", keys: []Key{KeyRAlt}},
+		{name: "ctrl alt only", keys: []Key{KeyControl, KeyAlt}},
+		{name: "shift only", keys: []Key{KeyShift}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -193,12 +191,12 @@ func TestKeyboardLayoutModifierOnlyReportsAllKeysUp(t *testing.T) {
 }
 
 func TestKeyboardLayoutAltGrReleaseClearsRemoteModifiers(t *testing.T) {
-	pressed := keys(walk.KeyRAlt, walk.KeyQ)
+	pressed := keys(KeyRAlt, KeyQ)
 	down := keyboardReportForLayout(keyboardLayoutDefault, pressed)
 	if down != kvm.KeyboardReport(2, 31) {
 		t.Fatalf("altgr+q down report=%x", down)
 	}
-	delete(pressed, walk.KeyQ)
+	delete(pressed, KeyQ)
 	up := keyboardReportForLayout(keyboardLayoutDefault, pressed)
 	if up != kvm.KeyboardReport(0) {
 		t.Fatalf("altgr after q release report=%x want all-up", up)
@@ -206,7 +204,7 @@ func TestKeyboardLayoutAltGrReleaseClearsRemoteModifiers(t *testing.T) {
 }
 
 func TestKeyboardLayoutForceGermanPreservesCtrlShortcut(t *testing.T) {
-	got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(walk.KeyControl, walk.KeyC))
+	got := keyboardReportForLayout(keyboardLayoutForceGerman, keys(KeyControl, KeyC))
 	want := kvm.KeyboardReport(1, 6)
 	if got != want {
 		t.Fatalf("ctrl+c report=%x want=%x", got, want)
@@ -246,8 +244,8 @@ func TestClipboardReportForRuneUnsupported(t *testing.T) {
 	}
 }
 
-func keys(values ...walk.Key) map[walk.Key]bool {
-	out := make(map[walk.Key]bool, len(values))
+func keys(values ...Key) map[Key]bool {
+	out := make(map[Key]bool, len(values))
 	for _, key := range values {
 		out[key] = true
 	}

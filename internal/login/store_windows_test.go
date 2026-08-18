@@ -102,26 +102,6 @@ func hasCredential(store credentialStore, addr, user string) bool {
 	return false
 }
 
-func TestConnectionListModelKeepsStoreOrderAndValues(t *testing.T) {
-	m := newConnectionListModel([]credentialEntry{
-		{Addr: "new", User: "admin"},
-		{Addr: "old", User: "root"},
-	})
-	if m.RowCount() != 2 {
-		t.Fatalf("rows=%d", m.RowCount())
-	}
-	if got := m.Value(0, 1); got != "new" {
-		t.Fatalf("addr=%v", got)
-	}
-	if got := m.Value(0, 2); got != "admin" {
-		t.Fatalf("user=%v", got)
-	}
-	entry, ok := m.entry(1)
-	if !ok || entry.Addr != "old" || entry.User != "root" {
-		t.Fatalf("entry=%#v ok=%v", entry, ok)
-	}
-}
-
 func TestCredentialStoreKeepsExistingPasswordWhenSaveUnchecked(t *testing.T) {
 	withCredentialPath(t)
 	var s credentialStore
