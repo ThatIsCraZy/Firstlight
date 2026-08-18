@@ -26,6 +26,9 @@ coverage.out
 .tmp/
 .tools-dotnet/
 
+# Keyboard maps exported at runtime from the built-in sources
+keyboard-maps/
+
 # Local smoke-test media
 *.iso
 
