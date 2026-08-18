@@ -181,6 +181,26 @@ The bridge is built on the official [MCP Go SDK](https://github.com/modelcontext
 - Tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are set per tool so a client can apply its own approval policy before a destructive console action.
 - Long-running calls honour MCP request cancellation: a cancelled `ilo_console_observe` wait returns instead of holding the console.
 
+The design follows the architecture described in Cloudflare's write-up of the
+2026-07-28 revision, [*MCP Next Generation*](https://blog.cloudflare.com/mcp-v2/)
+(often referred to informally as "MCP v2", although the specification itself is
+versioned by date rather than by a major number). Concretely:
+
+| Change described there | Status in this bridge |
+|---|---|
+| Stateless protocol core — no `Mcp-Session-Id`, no server-side session state | **Adopted.** The HTTP handler is created with `Stateless: true`; console state lives behind an explicit `console_handle` instead of a transport session |
+| Streamable HTTP replacing HTTP+SSE | **Adopted** |
+| `Mcp-Method` / `Mcp-Name` request headers for gateway-level inspection | **Handled by the SDK's** `NewStreamableHTTPHandler`, so they apply without bridge-specific code |
+| Multi Round-Trip Requests (MRTR) replacing stream-based elicitation | **Not used.** Confirmation is handled by the bridge's own `operation_id` idempotency keys and `confirm: true` arguments, which keep every call a single round trip |
+| `ttlMs` / `cacheScope` caching hints on list and read operations | **Not used.** A live framebuffer is not usefully cacheable; freshness is expressed through `frame_revision` and `after_revision` instead |
+| Authorization evolution (DCR deprecation, Client ID Metadata Documents, RFC 9207) | **Not applicable.** This release exposes HTTP on loopback only and implements no HTTP authorization layer |
+
+Statelessness is the part that shaped the bridge most: because no transport session
+survives a request, anything that must persist between calls had to become an
+explicit, revocable handle. That is why `ilo_console_open` returns a
+`console_handle` with its own TTL rather than relying on the transport to remember
+which server a client was talking to.
+
 The MCP client must pass an iLO address or DNS name, username, and password to `ilo_console_open`. These values are used only to establish that live console connection. The password and username are not written to disk or retained in the console object, and a disconnected console is not automatically reconnected. The live iLO session key, network connections, framebuffer, and retry records exist in process memory only until the handle is closed, expires, or the bridge exits.
 
 The default stdio transport is suitable for a locally launched MCP server:
