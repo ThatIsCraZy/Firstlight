@@ -1,0 +1,26 @@
+{
+	"FixedFileInfo": {
+		"FileVersion": { "Major": 1, "Minor": 1, "Patch": 0, "Build": 0 },
+		"ProductVersion": { "Major": 1, "Minor": 1, "Patch": 0, "Build": 0 },
+		"FileFlagsMask": "3f",
+		"FileFlags": "00",
+		"FileOS": "040004",
+		"FileType": "01",
+		"FileSubType": "00"
+	},
+	"StringFileInfo": {
+		"CompanyName": "iLO-KVM contributors",
+		"FileDescription": "iLO-KVM remote console client",
+		"FileVersion": "1.1.0.0",
+		"InternalName": "iLO-KVM.exe",
+		"LegalCopyright": "Copyright (c) 2026 iLO-KVM contributors",
+		"OriginalFilename": "iLO-KVM.exe",
+		"ProductName": "iLO-KVM",
+		"ProductVersion": "1.1.0.0"
+	},
+	"VarFileInfo": {
+		"Translation": { "LangID": "0409", "CharsetID": "04B0" }
+	},
+	"IconPath": "app.ico",
+	"ManifestPath": "iLO-KVM.exe.manifest"
+}

@@ -61,6 +61,26 @@ go build -trimpath -o iLO-KVM-mcp.exe ./cmd/ilo-kvm-mcp
 
 The generated executables are self-contained. Build products are intentionally not stored in the source tree; published binaries should be attached to GitHub Releases.
 
+### Windows resources (icon, manifest, version metadata)
+
+Each command embeds its icon, application manifest and VERSIONINFO block through a
+committed `versioninfo.syso`, generated from `versioninfo.json` with
+[`goversioninfo`](https://github.com/josephspurrier/goversioninfo). Regenerate the
+`.syso` files only after changing an icon, manifest or version number:
+
+```powershell
+go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+Push-Location cmd/ilo-kvm
+goversioninfo -64 -o versioninfo.syso versioninfo.json
+Pop-Location
+Push-Location cmd/ilo-kvm-mcp
+goversioninfo -64 -o versioninfo.syso versioninfo.json
+Pop-Location
+```
+
+The GUI client additionally embeds [`iLO-KVM.exe.manifest`](cmd/ilo-kvm/iLO-KVM.exe.manifest),
+which requests per-monitor DPI awareness and Common Controls v6.
+
 ## Running
 
 Start `iLO-KVM.exe` without arguments to open the launcher. Saved passwords are encrypted for the current Windows user with DPAPI.
