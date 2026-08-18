@@ -5,6 +5,8 @@
 
 iLO-KVM is a native Windows remote-console client for servers managed through HPE Integrated Lights-Out (iLO). It is intended as a community-maintained successor to the legacy `HPLOCONS` client, which is no longer actively maintained, and as a foundation for features that go beyond the original client.
 
+It gives you full keyboard/video/mouse access to a server from power-on through BIOS/UEFI to the running operating system, plus ISO virtual media, power control and boot-override handling — as a single self-contained executable, with no browser plug-in, Java or .NET runtime required. A second executable exposes the same console stack over the Model Context Protocol, so an LLM agent can operate the console under explicit confirmation rules. Successfully tested on HPE ProLiant Gen10 and Gen10 Plus, with the remote-console core additionally confirmed on Gen11 and Gen12; see [Tested hardware](#tested-hardware).
+
 The references to HPE and iLO exist only to explain which systems this software interoperates with.
 
 ## Goals
@@ -15,21 +17,74 @@ The references to HPE and iLO exist only to explain which systems this software 
 - Make keyboard translation, clipboard input, virtual media, and future language support extensible.
 - Document and test the implementation so that it can be maintained by the community.
 
-## Features
+## What iLO-KVM can do
 
-- Native Windows GUI with a persistent multi-session launcher.
-- Standalone MCP bridge for LLM-controlled iLO console sessions over stdio or stateless Streamable HTTP.
-- Remote KVM video, keyboard, and mouse input.
-- Legacy remote-console protocol V1 for iLO 4, including KVM/command encryption, shared sessions, and ISO virtual media.
-- Shared-session and seize-session connection modes.
-- Server power controls and display of power/POST status where supported.
-- Clipboard-to-HID text input with unsupported-character reporting.
-- Modular JSON keyboard maps with built-in US and German mappings.
-- Exportable German keyboard-map template with an English LLM authoring guide.
-- External keyboard maps loaded from the `keyboard-maps` directory beside the executable.
-- ISO virtual-media mounting for supported iLO remote-console protocol versions.
-- Optional TLS certificate verification.
-- Locally saved credentials protected with Windows DPAPI.
+### Remote console
+
+- Full remote KVM: live server video, keyboard and mouse, from the machine's own boot screens through BIOS/UEFI setup to the running operating system.
+- Works without an installed HPE client, browser plug-in, Java runtime or .NET runtime — a single self-contained `.exe`.
+- Speaks both remote-console protocol generations: the legacy V1 protocol used by iLO 4 (including KVM and command-channel encryption) and protocol V2 or newer used by later generations. The protocol version is detected automatically from the iLO itself.
+- Connection modes for a console that is already in use: request a *shared* session or *seize* the session from the current user.
+- When acting as the leader of a legacy shared session, incoming join requests are surfaced with an explicit Allow/Deny prompt.
+- Optional TLS certificate verification for the iLO HTTPS connection.
+
+### Input and keyboard translation
+
+- Symbolic key chords the host operating system would otherwise intercept, including `CTRL+ALT+DEL`.
+- Full mouse support: move, click, click-and-hold, release and scroll.
+- Clipboard-to-HID paste: local clipboard text is retyped into the remote console as real keystrokes, which works even in BIOS/UEFI screens that have no clipboard of their own.
+- Modular JSON keyboard maps translate a local source layout into the remote US layout. US and German maps are built in and selectable at runtime from the *Keyboard Layout* menu.
+- Additional layouts need no code change: drop a JSON map into the `keyboard-maps` directory next to the executable and it appears in the menu.
+- The built-in German map can be exported as a template, and an English authoring guide plus a JSON Schema document the format — including an LLM prompt template for generating a new layout.
+- Characters that a map cannot express are counted and reported instead of being silently mistyped.
+
+### Virtual media
+
+- Mount a local ISO image as a virtual CD/DVD device, for OS installation, driver injection or recovery media.
+- Supported on both the legacy V1 and the V2-or-newer protocol path.
+- Mount and dismount at any time from the *Virtual Media* menu, or mount automatically at startup with `-iso`.
+- Detailed transport state: whether the local media session exists, whether the transport connection is alive, whether the server firmware has recognized the device, and how many ISO bytes have been read and delivered.
+
+### Power and management
+
+- Momentary power press, press-and-hold, cold boot and reset, with confirmation prompts for the destructive actions.
+- Live power and POST status in the status bar where the firmware reports it.
+- Read the current power state and boot override through the authenticated iLO session.
+- Set a verified one-time virtual CD/DVD boot override without power-cycling the server.
+
+### Sessions and credentials
+
+- Persistent multi-session launcher: keep a list of iLO systems, connect to several at once, each in its own console window.
+- Saved passwords are encrypted for the current Windows user with DPAPI; saving is opt-in per entry, and entries can be deleted from the launcher.
+- Non-interactive start for scripts and shortcuts via `-addr`, `-name` and `-password`.
+- Accepts the legacy `HPLOCONS` `-lang` argument so existing shortcuts keep working.
+
+### LLM / automation control (MCP bridge)
+
+- A second, standalone executable exposes the same console stack as Model Context Protocol tools, so an LLM agent can drive an iLO console: open a session, watch the framebuffer, type, press chords, move the mouse, control power, set a one-time boot device and mount or unmount ISO media.
+- Runs over stdio or stateless Streamable HTTP, and can hold several independent console handles to several servers at the same time.
+- Designed for careful automation: idempotency keys on every mutating call, explicit `confirm: true` on destructive ones, tool annotations that mark destructive operations, and an opt-in allow-list directory for ISO mounting.
+
+### Diagnostics
+
+- Verbose protocol and input logging with `-debug`, or to a chosen file with `-log`, for troubleshooting firmware quirks.
+- Keyboard-map loading problems are reported as warnings instead of failing the session.
+
+## Tested hardware
+
+| Server generation | Management processor | Remote-console protocol | Status |
+|---|---|---|---|
+| HPE ProLiant Gen10 | iLO 5 | V2 or newer | Fully tested |
+| HPE ProLiant Gen10 Plus | iLO 5 | V2 or newer | Fully tested |
+| HPE ProLiant Gen11 | iLO 6 | V2 or newer | KVM core tested |
+| HPE ProLiant Gen12 | iLO 7 | V2 or newer | KVM core tested |
+| HPE ProLiant Gen8 / Gen9 | iLO 4 | V1 (legacy) | Expected to work; not yet confirmed |
+
+*Fully tested* means verified end to end: console video, keyboard and mouse input, clipboard paste, power actions, one-time boot override, ISO virtual media, and the MCP bridge.
+
+*KVM core tested* means the remote-console core — connecting, video, keyboard and mouse — was confirmed working on that generation. The surrounding features are built on the same code paths and are expected to behave the same, but have not been individually re-verified there.
+
+Both remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes — iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path. If you run iLO-KVM against a generation or firmware revision that is not listed above, a short report of what worked is welcome.
 
 ## Current scope and limitations
 
@@ -114,6 +169,16 @@ Common options:
 
 `iLO-KVM-mcp.exe` is a standalone translation layer between an MCP client and the existing iLO/KVM protocol implementation. It does not import the desktop application or its `internal/login` credential store, does not enumerate saved launcher sessions, and does not read the current Windows user's DPAPI-protected `cred.json`.
 
+### Protocol conformance
+
+The bridge is built on the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.7.0 and implements the current generation of the Model Context Protocol rather than the original 2024 draft:
+
+- Protocol-version negotiation covers every revision the SDK supports, from `2024-11-05` up to `2026-07-28`. The bridge negotiates the newest revision the connected client also understands, so both modern and older MCP clients can connect.
+- The HTTP transport is **Streamable HTTP**, the transport that replaced the deprecated HTTP+SSE transport. It runs in the specification's *stateless* mode: each HTTP request is an independent protocol connection and no MCP transport session is stored server-side.
+- Every tool publishes a generated JSON Schema for both its input and its structured output, so clients get validated arguments and machine-readable results instead of free-form text.
+- Tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are set per tool so a client can apply its own approval policy before a destructive console action.
+- Long-running calls honour MCP request cancellation: a cancelled `ilo_console_observe` wait returns instead of holding the console.
+
 The MCP client must pass an iLO address or DNS name, username, and password to `ilo_console_open`. These values are used only to establish that live console connection. The password and username are not written to disk or retained in the console object, and a disconnected console is not automatically reconnected. The live iLO session key, network connections, framebuffer, and retry records exist in process memory only until the handle is closed, expires, or the bridge exits.
 
 The default stdio transport is suitable for a locally launched MCP server:
@@ -147,7 +212,7 @@ Windows reparse points. Keep the root writable only by trusted local
 administrators: path validation cannot protect against an attacker who can
 replace files concurrently after validation.
 
-The HTTP transport uses MCP's stateless mode: every MCP HTTP request has an independent protocol connection and no MCP transport session is stored. A live remote console is necessarily stateful at the iLO protocol level, so tools refer to it through the opaque `console_handle` returned by `ilo_console_open`. Multiple handles can control multiple iLO systems concurrently. Idle handles expire after 15 minutes by default; adjust this with `-session-ttl`.
+A live remote console is necessarily stateful at the iLO protocol level, while the HTTP transport is stateless, so tools refer to the console through the opaque `console_handle` returned by `ilo_console_open`. Multiple handles can control multiple iLO systems concurrently. Idle handles expire after 15 minutes by default; adjust this with `-session-ttl`.
 
 Available tools:
 
