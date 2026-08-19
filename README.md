@@ -11,6 +11,12 @@ It gives you full keyboard/video/mouse access to a server from power-on through 
 
 The references to HPE and iLO exist only to explain which systems this software interoperates with.
 
+## Screenshot
+
+![Firstlight session launcher, dark theme](docs/screenshots/launcher.png)
+
+The persistent multi-session launcher: saved iLO systems on the left, the connection form on the right, drawn by the native Gio interface in the dark theme. Host names and accounts in the screenshot are placeholders.
+
 ## Goals
 
 - Provide a maintained, open-source iLO remote-console client.
