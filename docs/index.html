@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firstlight, a remote console for HPE iLO managed servers</title>
+<meta name="description" content="Firstlight is an independent, open-source Windows remote-console client for servers managed through HPE Integrated Lights-Out, with a modular JSON keyboard layout system, ISO virtual media, power control and an MCP bridge.">
+<link rel="icon" href="icon.png" type="image/png">
+<meta property="og:title" content="Firstlight, a remote console for HPE iLO managed servers">
+<meta property="og:description" content="Native Windows KVM client for HPE iLO: modular JSON keyboard layouts, ISO virtual media, power control and an MCP bridge. Independent open-source project.">
+<meta property="og:image" content="screenshots/session.png">
+<meta property="og:type" content="website">
+<style>
+:root {
+  color-scheme: dark light;
+  --bg: #131315;
+  --bg-raised: #1b1b1e;
+  --bg-sunken: #0e0e10;
+  --line: #2c2c31;
+  --line-soft: #232327;
+  --ink: #ececf0;
+  --ink-dim: #a6a6ae;
+  --ink-faint: #76767e;
+  --accent: #e2233c;
+  --accent-ink: #ff5a70;
+  --code-bg: #161619;
+  --radius: 14px;
+  --measure: 68ch;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fbfbfc;
+    --bg-raised: #ffffff;
+    --bg-sunken: #f2f2f4;
+    --line: #dededf;
+    --line-soft: #e8e8ea;
+    --ink: #17171a;
+    --ink-dim: #55555d;
+    --ink-faint: #7c7c86;
+    --accent: #ce1126;
+    --accent-ink: #b30f21;
+    --code-bg: #f5f5f7;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { color: var(--ink); }
+code, pre, .mono { font-family: "Cascadia Mono", Consolas, "SF Mono", "Liberation Mono", monospace; }
+code { font-size: 0.9em; background: var(--code-bg); border: 1px solid var(--line-soft); border-radius: 5px; padding: 0.08em 0.35em; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); border: 1px solid var(--line-soft); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; margin: 0; }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; margin: 0; }
+p { margin: 0 0 1em; max-width: var(--measure); }
+ul { margin: 0 0 1em; padding-left: 1.15em; max-width: var(--measure); }
+li { margin-bottom: 0.4em; }
+li::marker { color: var(--ink-faint); }
+
+.wrap { width: min(1120px, 100% - 48px); margin-inline: auto; }
+@media (max-width: 640px) { .wrap { width: calc(100% - 32px); } }
+
+header.bar {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.bar-in { display: flex; align-items: center; gap: 12px; height: 58px; }
+.bar-in img { width: 26px; height: 26px; border-radius: 6px; }
+.bar-name { font-weight: 600; letter-spacing: -0.01em; }
+.bar-links { margin-left: auto; display: flex; gap: 20px; font-size: 14.5px; }
+.bar-links a { color: var(--ink-dim); text-decoration: none; }
+.bar-links a:hover { color: var(--ink); }
+@media (max-width: 560px) { .bar-links a.optional { display: none; } }
+
+.hero { padding: 68px 0 8px; }
+.eyebrow {
+  display: inline-block; font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent-ink); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px; padding: 4px 12px; margin-bottom: 22px;
+}
+.hero h1 { font-size: clamp(38px, 6vw, 62px); font-weight: 650; margin-bottom: 18px; }
+.hero .lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--ink-dim); max-width: 62ch; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin: 30px 0 10px; }
+.btn {
+  display: inline-block; padding: 11px 20px; border-radius: 10px; font-size: 15px; font-weight: 550;
+  text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--bg-raised);
+}
+.btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); color: #fff; }
+
+.shot { margin: 44px 0 0; }
+.shot figure { margin: 0; }
+.shot img {
+  display: block; width: 100%; height: auto; border-radius: var(--radius);
+  border: 1px solid var(--line); background: #000;
+}
+.shot figcaption { color: var(--ink-dim); font-size: 14.5px; margin-top: 14px; max-width: var(--measure); }
+
+section { padding: 72px 0; border-top: 1px solid var(--line-soft); }
+section:first-of-type { border-top: 0; }
+.kicker { color: var(--accent-ink); font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; font-weight: 650; margin-bottom: 12px; }
+section h2 { font-size: clamp(26px, 3.4vw, 36px); font-weight: 620; margin-bottom: 18px; }
+section h3 { font-size: 18px; font-weight: 620; margin: 32px 0 10px; }
+.sub { color: var(--ink-dim); font-size: 17px; }
+
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(272px, 100%), 1fr)); margin-top: 34px; }
+.card { background: var(--bg-raised); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 22px 22px 18px; }
+.card h3 { margin: 0 0 8px; font-size: 16.5px; }
+.card p { color: var(--ink-dim); font-size: 14.8px; margin: 0; max-width: none; }
+
+.split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; margin-top: 30px; }
+.split > * { min-width: 0; }
+@media (max-width: 860px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.split p, .split ul { max-width: none; }
+
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 22px 0 0; max-width: var(--measure); }
+.steps li { counter-increment: s; position: relative; padding-left: 44px; margin-bottom: 18px; }
+.steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+  background: var(--bg-sunken); border: 1px solid var(--line); color: var(--ink-dim);
+  font-size: 13px; font-weight: 650;
+}
+.steps strong { font-weight: 620; }
+
+.tablewrap { overflow-x: auto; margin-top: 26px; border: 1px solid var(--line-soft); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: 14.6px; min-width: 560px; }
+th, td { text-align: left; padding: 12px 18px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+thead th { background: var(--bg-sunken); font-weight: 620; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-dim); }
+tbody tr:last-child td { border-bottom: 0; }
+td.status { white-space: nowrap; color: var(--ink-dim); }
+
+.note {
+  border-left: 3px solid var(--accent); background: var(--bg-raised);
+  border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 28px 0 0; max-width: var(--measure);
+}
+.note p { margin: 0; font-size: 14.8px; color: var(--ink-dim); }
+.note strong { color: var(--ink); }
+
+footer { border-top: 1px solid var(--line-soft); padding: 54px 0 70px; color: var(--ink-faint); font-size: 14px; }
+footer p { max-width: 82ch; margin-bottom: 1.1em; }
+footer a { color: var(--ink-dim); }
+.foot-top { display: flex; flex-wrap: wrap; gap: 18px 28px; margin-bottom: 30px; }
+.foot-top a { text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <img src="icon.png" alt="">
+    <span class="bar-name">Firstlight</span>
+    <nav class="bar-links">
+      <a href="#console">Console</a>
+      <a href="#keyboard">Keyboard layouts</a>
+      <a href="#hardware" class="optional">Hardware</a>
+      <a href="#mcp" class="optional">MCP</a>
+      <a href="https://github.com/ThatIsCraZy/Firstlight">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<div class="wrap hero">
+  <span class="eyebrow">Independent open-source project</span>
+  <h1>A remote console for HPE&nbsp;iLO managed servers.</h1>
+  <p class="lede">
+    Firstlight is a native Windows KVM client for servers managed through HPE Integrated Lights-Out.
+    Full keyboard, video and mouse access from power-on through BIOS/UEFI to the running operating system,
+    plus ISO virtual media, power control and boot override. One self-contained executable, with no browser
+    plug-in, Java or .NET runtime.
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/ThatIsCraZy/Firstlight">View on GitHub</a>
+    <a class="btn" href="https://github.com/ThatIsCraZy/Firstlight/releases">Releases</a>
+    <a class="btn" href="#keyboard">Keyboard layout system</a>
+  </div>
+
+  <div class="shot">
+    <figure>
+      <img src="screenshots/session.png" alt="The Firstlight window showing a live remote console on an HPE ProLiant DL345 Gen11, with the menu bar above the server video and a status bar below it.">
+      <figcaption>
+        A live remote console on an HPE ProLiant DL345 Gen11. The server's own video sits in the centre,
+        the in-window menu bar above it, and the two-part status bar below shows connection, virtual media,
+        keyboard layout and pointer capture on the left, server power and POST code on the right.
+        Host names, addresses and account names were replaced with documentation placeholders after capture.
+      </figcaption>
+    </figure>
+  </div>
+</div>
+
+<section id="console">
+  <div class="wrap">
+    <div class="kicker">What it does</div>
+    <h2>Everything the console session needs, in one window</h2>
+    <p class="sub">Firstlight is a community-maintained successor to the legacy <code>HPLOCONS</code> client, and a foundation for what that client never did.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Both protocol generations</h3>
+        <p>The legacy V1 protocol used by iLO 4, including KVM and command-channel encryption, and protocol V2 or newer for later generations. The version is detected from the iLO itself.</p>
+      </div>
+      <div class="card">
+        <h3>Shared and seized sessions</h3>
+        <p>Join a busy console as a shared session or seize it. As the leader of a legacy shared session you get an explicit Allow/Deny prompt for incoming join requests.</p>
+      </div>
+      <div class="card">
+        <h3>ISO virtual media</h3>
+        <p>Mount a local ISO as a virtual CD/DVD on both protocol paths, for installation, driver injection or recovery. Transport state reports whether firmware actually saw the device.</p>
+      </div>
+      <div class="card">
+        <h3>Power and boot override</h3>
+        <p>Momentary press, press-and-hold, cold boot and reset, each destructive action behind a confirmation. Set a verified one-time virtual CD/DVD boot override without power-cycling.</p>
+      </div>
+      <div class="card">
+        <h3>Multi-session launcher</h3>
+        <p>Keep a list of iLO systems and connect to several at once, each in its own window. Saved passwords are encrypted for the current Windows user with DPAPI, opt-in per entry.</p>
+      </div>
+      <div class="card">
+        <h3>Native, not a web view</h3>
+        <p>A GPU-rendered interface built on Gio and drawn through Direct3D&nbsp;11. No Electron, no bundled browser engine. Light and dark themes follow the Windows setting and switch live.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="keyboard">
+  <div class="wrap">
+    <div class="kicker">The part most clients get wrong</div>
+    <h2>A modular keyboard layout system</h2>
+    <p class="sub">
+      A remote console has a problem a local terminal does not: the server cannot see which keyboard is on your desk.
+      iLO carries raw USB HID scancodes, and firmware, BIOS/UEFI and most installers read those as a US keyboard.
+      Untranslated, the key labelled <code>Z</code> on a German board arrives as <code>Y</code>, and <code>@</code> does not arrive at all.
+    </p>
+    <p>
+      Firstlight fixes that in data instead of in code. Every layout is a JSON file, so a new language needs no Go change,
+      no rebuild and no pull request. US and German ship built in and switch at runtime from the <strong>Keyboard Layout</strong> menu.
+    </p>
+
+    <div class="split">
+      <div>
+        <h3>A map is a delta over a protected base</h3>
+        <p>
+          A protected base map, <code>us-base</code>, holds the identity translation: 96 physical key rules and
+          97 clipboard character rules. A language map declares <code>"extends": "us-base"</code> and lists only what differs.
+          The built-in German map is 20 physical rules, because the other 76 keys already behave correctly.
+        </p>
+        <p>
+          Inheritance is resolved when the maps load, nests deeper than one level, and a map that extends itself
+          through a cycle is rejected instead of hanging the loader.
+        </p>
+
+        <h3>Physical rules rewrite one key per state</h3>
+        <p>The German <code>7</code>, which carries <code>/</code> on Shift and <code>{</code> on AltGr:</p>
+<pre><code>{
+  "input": "7",
+  "plain": { "key": "DIGIT_7" },
+  "shift": { "key": "SLASH" },
+  "altGr": { "key": "LEFT_BRACKET",
+             "modifiers": ["left_shift"] }
+}</code></pre>
+
+        <h3>Text rules drive clipboard paste</h3>
+        <p>Clipboard text is retyped as real keystrokes, so it works in BIOS/UEFI screens that have no clipboard of their own:</p>
+<pre><code>{
+  "char": "@",
+  "strokes": [
+    { "key": "DIGIT_2", "modifiers": ["left_shift"] }
+  ]
+}</code></pre>
+        <p>
+          Because the remote target is always US, <code>us-base</code> already covers every character a US keyboard
+          can produce, so most language maps need no text rules at all. The built-in German map defines none.
+        </p>
+      </div>
+
+      <div>
+        <h3>How a keystroke resolves</h3>
+        <ul>
+          <li>State priority is AltGr, then Shift, then plain.</li>
+          <li>A key with a <code>plain</code> rule but no <code>shift</code> rule falls back to the plain stroke plus <code>left_shift</code>, so the common case needs one line.</li>
+          <li>Ctrl, Alt and GUI combinations bypass language translation entirely. <code>CTRL+C</code> stays <code>CTRL+C</code>, and <code>CTRL+ALT+DEL</code> keeps working under any map.</li>
+          <li><code>{ "suppress": true }</code> marks a source key with no portable US equivalent, so it is swallowed rather than mistyped.</li>
+          <li>A clipboard character that neither the map nor its base defines is counted and reported after the paste instead of being silently dropped.</li>
+        </ul>
+
+        <h3>Adding your own layout</h3>
+        <ol class="steps">
+          <li><strong>Export the template.</strong> <em>Keyboard Layout &rarr; Export built-in German map...</em> writes a working <code>german.json</code> next to an English authoring guide, as one atomic pair with rollback, so a failed export never leaves half a file behind.</li>
+          <li><strong>Edit it, or let an LLM do it.</strong> The guide carries a prompt template written for exactly that, and a JSON Schema documents every field.</li>
+          <li><strong>Drop it in and restart.</strong> Put the <code>.json</code> file directly into the <code>keyboard-maps</code> directory beside <code>Firstlight.exe</code>. It appears in the menu under its own <code>displayName</code>.</li>
+        </ol>
+
+        <h3>A broken map never breaks the session</h3>
+        <p>
+          Maps are parsed strictly: unknown or trailing JSON, a wrong <code>schemaVersion</code>, a non-US
+          <code>targetLocale</code>, a duplicated key or character, an unknown HID name and files over 1&nbsp;MiB are all rejected.
+          Every rejection becomes a startup warning rather than a failure. The remaining maps stay selectable,
+          a built-in map shadowed by a broken external file is restored, and two external files claiming the same
+          <code>id</code> cancel each other out, so a forgotten copy cannot silently win.
+        </p>
+
+        <div class="note">
+          <p><strong>The MCP bridge uses the same translation layer.</strong> <code>ilo_console_type_text</code> types through the built-in US or German map, so an agent pasting a German password produces the same HID strokes the desktop client would.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot">
+      <figure>
+        <img src="screenshots/launcher.png" alt="The Firstlight launcher window with a list of saved iLO systems on the left and a connection form on the right.">
+        <figcaption>
+          The persistent multi-session launcher: saved iLO systems on the left, the connection form on the right.
+          Host names and account names are documentation placeholders.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="hardware">
+  <div class="wrap">
+    <div class="kicker">Tested hardware</div>
+    <h2>Where it has actually run</h2>
+    <p class="sub">
+      <em>Fully tested</em> means verified end to end: console video, keyboard and mouse input, clipboard paste,
+      power actions, one-time boot override, ISO virtual media and the MCP bridge. <em>KVM core tested</em> means
+      connecting, video, keyboard and mouse were confirmed on that generation.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Server generation</th><th>Management processor</th><th>Console protocol</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>HPE ProLiant Gen10</td><td>iLO 5</td><td>V2 or newer</td><td class="status">Fully tested</td></tr>
+          <tr><td>HPE ProLiant Gen10 Plus</td><td>iLO 5</td><td>V2 or newer</td><td class="status">Fully tested</td></tr>
+          <tr><td>HPE ProLiant Gen11</td><td>iLO 6</td><td>V2 or newer</td><td class="status">KVM core tested</td></tr>
+          <tr><td>HPE ProLiant Gen12</td><td>iLO 7</td><td>V2 or newer</td><td class="status">KVM core tested</td></tr>
+          <tr><td>HPE ProLiant Gen8 / Gen9</td><td>iLO 4</td><td>V1 (legacy)</td><td class="status">Expected, not yet confirmed</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:26px">
+      Both protocol generations are implemented, so the remaining combinations are expected to work without changes.
+      If you run Firstlight against a generation or firmware revision that is not listed, a short report of what worked
+      is welcome.
+    </p>
+  </div>
+</section>
+
+<section id="mcp">
+  <div class="wrap">
+    <div class="kicker">Automation</div>
+    <h2>The same console stack, as MCP tools</h2>
+    <p class="sub">
+      A second standalone executable, <code>Firstlight-mcp.exe</code>, exposes the console over the Model Context
+      Protocol, so an LLM agent can open a session, watch the framebuffer, type, press chords, move the mouse,
+      control power, set a one-time boot device and mount or unmount ISO media.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Current protocol, not the 2024 draft</h3>
+        <p>Built on the official MCP Go SDK. Version negotiation spans <code>2024-11-05</code> through <code>2026-07-28</code>, and the HTTP transport is Streamable HTTP in the specification's stateless mode.</p>
+      </div>
+      <div class="card">
+        <h3>Explicit handles, not transport sessions</h3>
+        <p>Because no transport session survives a request, console state lives behind a revocable <code>console_handle</code> with its own TTL. Several handles can drive several servers at once.</p>
+      </div>
+      <div class="card">
+        <h3>Built for careful automation</h3>
+        <p>Idempotency keys on every mutating call, <code>confirm: true</code> on destructive ones, tool annotations that mark them as such, and an opt-in allow-list directory for ISO mounting.</p>
+      </div>
+    </div>
+
+    <p style="margin-top:32px">The default stdio transport suits a locally launched server:</p>
+<pre><code>{
+  "mcpServers": {
+    "hpe-ilo": {
+      "command": "C:\\Program Files\\Firstlight\\Firstlight-mcp.exe"
+    }
+  }
+}</code></pre>
+
+    <div class="note">
+      <p>
+        <strong>HTTP is restricted to loopback on purpose.</strong> This release implements no HTTP authorization layer,
+        and the returned <code>console_handle</code> is a bearer capability: any caller holding it can operate that live
+        console until it is closed or expires. Prefer stdio, and use a dedicated least-privilege iLO account.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <div class="kicker">Getting started</div>
+    <h2>Build it, or take a release</h2>
+    <p class="sub">Windows and Go 1.25 or newer. The generated executables are self-contained; build products are deliberately not kept in the source tree.</p>
+
+<pre><code>git clone https://github.com/ThatIsCraZy/Firstlight.git
+Set-Location Firstlight
+go test ./...
+go build -trimpath -ldflags '-H=windowsgui' -o Firstlight.exe ./cmd/firstlight
+go build -trimpath -o Firstlight-mcp.exe ./cmd/firstlight-mcp</code></pre>
+
+    <p style="margin-top:26px">
+      Start <code>Firstlight.exe</code> without arguments for the launcher, or connect directly with
+      <code>-addr</code>, <code>-name</code> and <code>-password</code>. The legacy <code>HPLOCONS</code>
+      <code>-lang</code> argument is accepted so existing shortcuts keep working.
+    </p>
+
+    <div class="note">
+      <p>
+        <strong>A password on the command line may be visible to other local processes.</strong> Prefer the interactive
+        launcher on shared systems. Certificate verification is off by default because many iLO installations use
+        self-signed certificates; turn it on with <code>-verify-cert</code> wherever the certificate is trusted.
+      </p>
+    </div>
+
+    <div class="cta" style="margin-top:34px">
+      <a class="btn primary" href="https://github.com/ThatIsCraZy/Firstlight">Source and documentation</a>
+      <a class="btn" href="https://github.com/ThatIsCraZy/Firstlight/blob/main/README.md#modular-keyboard-layout-system">Keyboard map reference</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-top">
+      <a href="https://github.com/ThatIsCraZy/Firstlight">GitHub</a>
+      <a href="https://github.com/ThatIsCraZy/Firstlight/blob/main/README.md">README</a>
+      <a href="https://github.com/ThatIsCraZy/Firstlight/blob/main/LICENSE">Apache-2.0</a>
+      <a href="https://github.com/ThatIsCraZy/Firstlight/blob/main/NOTICE">NOTICE</a>
+      <a href="https://github.com/ThatIsCraZy/Firstlight/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>
+    </div>
+
+    <p>
+      <strong>Firstlight is an independent community open-source project.</strong> It is not affiliated with, sponsored by,
+      endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise. It is not an official HPE product,
+      and HPE does not provide support for it.
+    </p>
+    <p>
+      Hewlett Packard Enterprise, HPE, iLO, Integrated Lights-Out, HPLOCONS, associated product names and any related logos
+      or marks are trademarks or registered trademarks of Hewlett Packard Enterprise Company and/or its affiliates.
+      All rights in those marks remain with their respective owners. Their names are used here solely in a descriptive and
+      nominative manner, to identify the systems this software is intended to interoperate with.
+    </p>
+    <p>
+      Firstlight is an independently written client. It contains no source code, binaries, resources or artwork originating
+      from HPE or from any HPE client software. The wire formats were determined by analysing observable protocol behaviour
+      for the single purpose of interoperability, which Article 6 of Directive 2009/24/EC and Section 69e UrhG expressly permit.
+    </p>
+    <p>
+      Every host name, IP address and account name shown in the screenshots on this page is a documentation placeholder,
+      edited into the captured images afterwards. Nothing else in those images was altered.
+    </p>
+    <p>
+      The software is provided as is, without warranty of any kind. Out-of-band management gives powerful access to server
+      hardware; you are responsible for validating the software and protecting credentials, certificates, networks and
+      managed systems in your environment.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

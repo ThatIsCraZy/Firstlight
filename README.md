@@ -11,6 +11,8 @@ It gives you full keyboard/video/mouse access to a server from power-on through 
 
 The references to HPE and iLO exist only to explain which systems this software interoperates with.
 
+Project site: **[thatiscrazy.github.io/Firstlight](https://thatiscrazy.github.io/Firstlight/)**
+
 ## Screenshots
 
 ![Firstlight remote console showing a running server, dark theme](docs/screenshots/session.png)
