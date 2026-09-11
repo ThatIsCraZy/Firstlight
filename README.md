@@ -11,18 +11,24 @@ It gives you full keyboard/video/mouse access to a server from power-on through 
 
 The references to HPE and iLO exist only to explain which systems this software interoperates with.
 
-## Screenshot
+## Screenshots
+
+![Firstlight remote console showing a running server, dark theme](docs/screenshots/session.png)
+
+A live remote console on an HPE ProLiant DL345 Gen11: the server's own video in the centre, the in-window menu bar above it, and the two-part status bar below it. Connection, virtual media, keyboard layout and pointer capture sit on the left, server power and POST code on the right.
 
 ![Firstlight session launcher, dark theme](docs/screenshots/launcher.png)
 
-The persistent multi-session launcher: saved iLO systems on the left, the connection form on the right, drawn by the native Gio interface in the dark theme. Host names and accounts in the screenshot are placeholders.
+The persistent multi-session launcher: saved iLO systems on the left, the connection form on the right, drawn by the native Gio interface in the dark theme.
+
+Host names, addresses and account names in both screenshots were replaced with documentation placeholders after capture. Nothing else in either image was altered.
 
 ## Goals
 
 - Provide a maintained, open-source iLO remote-console client.
 - Preserve access to systems for which the legacy client is no longer a practical option.
 - Offer a small, standalone Windows application without requiring the original HPE client.
-- Make keyboard translation, clipboard input, virtual media, and future language support extensible.
+- Keep keyboard translation extensible in data rather than in code: a new layout is a JSON file, not a pull request.
 - Document and test the implementation so that it can be maintained by the community.
 
 ## What Firstlight can do
@@ -41,10 +47,7 @@ The persistent multi-session launcher: saved iLO systems on the left, the connec
 - Symbolic key chords the host operating system would otherwise intercept, including `CTRL+ALT+DEL`.
 - Full mouse support: move, click, click-and-hold, release and scroll.
 - Clipboard-to-HID paste: local clipboard text is retyped into the remote console as real keystrokes, which works even in BIOS/UEFI screens that have no clipboard of their own.
-- Modular JSON keyboard maps translate a local source layout into the remote US layout. US and German maps are built in and selectable at runtime from the *Keyboard Layout* menu.
-- Additional layouts need no code change: drop a JSON map into the `keyboard-maps` directory next to the executable and it appears in the menu.
-- The built-in German map can be exported as a template, and an English authoring guide plus a JSON Schema document the format — including an LLM prompt template for generating a new layout.
-- Characters that a map cannot express are counted and reported instead of being silently mistyped.
+- A modular keyboard layout system translates your local layout into the US layout the server's firmware expects. US and German are built in and switch at runtime from the *Keyboard Layout* menu; further layouts are JSON files you drop next to the executable. See [Modular keyboard layout system](#modular-keyboard-layout-system).
 
 ### Virtual media
 
@@ -85,6 +88,79 @@ The persistent multi-session launcher: saved iLO systems on the left, the connec
 
 - Verbose protocol and input logging with `-debug`, or to a chosen file with `-log`, for troubleshooting firmware quirks.
 - Keyboard-map loading problems are reported as warnings instead of failing the session.
+
+## Modular keyboard layout system
+
+A remote console has a problem a local terminal does not: the server cannot see which keyboard is on your desk. iLO carries raw USB HID scancodes, and firmware, BIOS/UEFI and most installers read those as a US keyboard. Untranslated, the key labelled `Z` on a German board arrives as `Y`, and `@` does not arrive at all. Firstlight fixes that in data instead of in code. Every layout is a JSON file, so a new language needs no Go change, no rebuild and no pull request.
+
+### Direction and inheritance
+
+Every map translates one local source layout into the remote US layout. The direction never changes:
+
+```
+source layout (de-DE, fr-FR, ...)  ->  en-US on the remote server
+```
+
+A protected base map, `us-base`, holds the identity translation: 96 physical key rules and 97 clipboard character rules. A language map declares `"extends": "us-base"` and lists only what differs. The built-in German map is 20 physical rules, because the other 76 keys already behave correctly. Inheritance is resolved when the maps load, nests deeper than one level, and a map that extends itself through a cycle is rejected instead of hanging the loader.
+
+### The two rule kinds
+
+**Physical rules** rewrite one source key, per modifier state. This is the German `7`, which carries `/` on Shift and `{` on AltGr:
+
+```json
+{
+  "input": "7",
+  "plain": { "key": "DIGIT_7" },
+  "shift": { "key": "SLASH" },
+  "altGr": { "key": "LEFT_BRACKET", "modifiers": ["left_shift"] }
+}
+```
+
+**Text rules** drive clipboard paste, where Firstlight retypes local clipboard text as real keystrokes so it works in BIOS/UEFI screens that have no clipboard:
+
+```json
+{ "char": "@", "strokes": [ { "key": "DIGIT_2", "modifiers": ["left_shift"] } ] }
+```
+
+A stroke sequence may be longer than one press. Because the remote target is always US, `us-base` already covers every character a US keyboard can produce, so most language maps need no text rules at all. The built-in German map defines none.
+
+### How a keystroke resolves
+
+- State priority is AltGr, then Shift, then plain.
+- A key with a `plain` rule but no `shift` rule falls back to the plain stroke plus `left_shift`, so the common case needs one line.
+- Ctrl, Alt and GUI combinations bypass language translation entirely. `CTRL+C` stays `CTRL+C` and `CTRL+ALT+DEL` keeps working regardless of the selected map.
+- `{ "suppress": true }` marks a source key that has no portable US equivalent; it is swallowed rather than mistyped.
+- A clipboard character that neither the map nor its base defines is counted and reported after the paste instead of being silently dropped.
+
+### Key vocabulary
+
+| Field | Accepts |
+|---|---|
+| `input` | `A`-`Z`, `0`-`9`, `ENTER`, `ESCAPE`, `TAB`, `SPACE`, `BACKSPACE`, `OEM_1`-`OEM_7`, `OEM_102`, `OEM_MINUS`, `OEM_PLUS`, `OEM_COMMA`, `OEM_PERIOD`, `F1`-`F12`, navigation, keypad and lock keys, or `VK_0xNN` for any other Windows virtual key |
+| `key` | USB HID usage names such as `DIGIT_1`, `SEMICOLON`, `GRAVE`, `NON_US_BACKSLASH`, `KEYPAD_ADD`, or `HID_0xNN` for a raw usage code |
+| `modifiers` | `left_ctrl`, `left_shift`, `left_alt`, `left_gui` and their `right_` counterparts |
+
+The `VK_0xNN` and `HID_0xNN` forms are the escape hatch for keys with no friendly alias. Raw HID codes in the modifier range `0xE0`-`0xE7` are rejected, because modifiers belong in `modifiers`.
+
+### Adding a layout
+
+1. Choose **Keyboard Layout → Export built-in German map...**. Firstlight writes a working `german.json` next to an English authoring guide, as one atomic pair with rollback, so a failed export never leaves half a file behind.
+2. Edit the copy, or hand the guide and the JSON Schema to an LLM. The guide contains a prompt template written for exactly that.
+3. Put the finished `.json` file directly into the `keyboard-maps` directory beside `Firstlight.exe` and restart. It appears in the **Keyboard Layout** menu under its own `displayName`.
+
+`keyboard-maps` and `keyboard-maps/_examples` are created at every start, and the examples directory is rewritten each time with the current `german.json`, `german-map-guide.md` and `keyboard-map.schema.json`. Only files directly in `keyboard-maps` are loaded, so the examples never compete with your own maps.
+
+### Validation and failure isolation
+
+Maps are parsed strictly. A file is rejected when it is larger than 1 MiB, contains unknown or trailing JSON, sets a `schemaVersion` other than `1`, uses an `id` that is not lowercase `[a-z0-9._-]`, omits `displayName` or `sourceLocale`, sets `targetLocale` to anything but `en-US`, claims the protected id `us-base`, duplicates a physical input or a text character, names an unknown key or modifier, or combines `suppress` with a key.
+
+A rejected map never takes the application down with it. Every problem becomes a startup warning, the remaining maps stay selectable, and the session continues. If an external file that shadows a built-in map fails to build, the built-in map is restored in its place. Two external files claiming the same `id` cancel each other out, so a forgotten copy cannot silently win.
+
+The complete format, the full symbolic name tables and a validation checklist live in the exported guide and in [`keyboard-map.schema.json`](internal/keyboardmap/assets/keyboard-map.schema.json).
+
+### Beyond the desktop client
+
+The MCP bridge uses the same translation layer: `ilo_console_type_text` types through the built-in US or German map, so an agent pasting a German password produces the same HID strokes the desktop client would.
 
 ## Tested hardware
 
@@ -278,18 +354,6 @@ Security notes:
 - Treat the returned `console_handle` as a bearer capability. Any MCP caller that possesses it can observe or operate that live console until it is closed or expires.
 - The bridge does not log MCP request bodies, passwords, console handles, or full ISO paths. Virtual-media status returns only a safe ISO filename. The MCP client, LLM provider, process supervisor, or a local proxy may still record tool arguments; configure those components accordingly and use a dedicated least-privilege iLO account.
 - Run the bridge under a dedicated service account when an operating-system-level boundary from the desktop user's saved sessions is required.
-
-## Keyboard maps
-
-At startup, the application creates a `keyboard-maps` directory beside the executable. Valid JSON files directly inside that directory become selectable keyboard layouts after the next application restart.
-
-The **Keyboard Layout** menu provides:
-
-- `Default` physical input behavior.
-- All valid built-in and external maps.
-- `Export built-in German map...`, which writes a loadable JSON template and an accompanying English Markdown guide for humans and LLMs.
-
-Generated references are stored under `keyboard-maps/_examples`. See the exported guide and JSON schema for the complete map format, symbolic HID names, modifiers, inheritance rules, and validation checklist.
 
 ## Third-party packages and acknowledgements
 
