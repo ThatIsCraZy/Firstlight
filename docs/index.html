@@ -146,6 +146,16 @@ td.status { white-space: nowrap; color: var(--ink-dim); }
 .note p { margin: 0; font-size: 14.8px; color: var(--ink-dim); }
 .note strong { color: var(--ink); }
 
+.pitch {
+  margin-top: 34px; padding: 28px 30px 12px;
+  background: var(--bg-raised); border: 1px solid var(--line-soft);
+  border-top: 3px solid var(--accent); border-radius: var(--radius);
+}
+.pitch h3 { margin: 0 0 14px; font-size: 21px; font-weight: 620; }
+.pitch p { color: var(--ink-dim); max-width: 76ch; }
+.pitch p:last-child { margin-bottom: 1em; }
+.pitch strong { color: var(--ink); font-weight: 620; }
+
 footer { border-top: 1px solid var(--line-soft); padding: 54px 0 70px; color: var(--ink-faint); font-size: 14px; }
 footer p { max-width: 82ch; margin-bottom: 1.1em; }
 footer a { color: var(--ink-dim); }
@@ -248,6 +258,27 @@ footer a { color: var(--ink-dim); }
       no rebuild and no pull request. US and German ship built in and switch at runtime from the <strong>Keyboard Layout</strong> menu.
     </p>
 
+
+    <div class="pitch">
+      <h3>Passwords on a console that has no layout</h3>
+      <p>
+        This is where the difference shows up first. An ESXi DCUI login, a Linux getty, a BIOS password box: the
+        field hides what you type, so a wrong character just gives you a failed login with no clue which one it
+        was. A password holding <code>!</code>, <code>/</code>, <code>@</code> or <code>-</code> fails three times
+        before you start typing it blind on a US layout in your head.
+      </p>
+      <p>
+        Switch the layout to German and the keys produce what is printed on them. For the passwords that already
+        live in a password manager, <strong>Edit &rarr; Paste Clipboard</strong> retypes the clipboard as real HID
+        keystrokes, one character at a time, so it lands in fields that have no clipboard of their own.
+      </p>
+      <p>
+        That paste path is nothing but HID keyboard reports on the KVM channel you already have. It never touches
+        the iLO's own clipboard service and does not branch on the protocol version anywhere in the code, so it
+        behaves the same on iLO&nbsp;5 as on the legacy V1 protocol of iLO&nbsp;4, where the firmware has no
+        clipboard feature to offer in the first place.
+      </p>
+    </div>
     <div class="split">
       <div>
         <h3>A map is a delta over a protected base</h3>

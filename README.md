@@ -95,6 +95,16 @@ Host names, addresses and account names in both screenshots were replaced with d
 
 A remote console has a problem a local terminal does not: the server cannot see which keyboard is on your desk. iLO carries raw USB HID scancodes, and firmware, BIOS/UEFI and most installers read those as a US keyboard. Untranslated, the key labelled `Z` on a German board arrives as `Y`, and `@` does not arrive at all. Firstlight fixes that in data instead of in code. Every layout is a JSON file, so a new language needs no Go change, no rebuild and no pull request.
 
+### Passwords on a console that has no layout
+
+This is where the difference shows up first. An ESXi DCUI login, a Linux getty, a BIOS password box: the field hides what you type, so a wrong character just gives you a failed login with no clue which one it was. A password holding `!`, `/`, `@` or `-` fails three times before you start typing it blind on a US layout in your head.
+
+Switch **Keyboard Layout** to German and the keys produce what is printed on them. The same holds for any layout you add yourself.
+
+For the passwords that already live in a password manager, **Edit -> Paste Clipboard** is faster still. Firstlight retypes the clipboard as real HID keystrokes, one character at a time with an all-keys-up report between them, so it lands in fields that have no clipboard of their own: the ESXi DCUI login, a Linux console, a UEFI setup password box.
+
+That paste path is nothing but HID keyboard reports on the KVM channel you already have. It never touches the iLO's own clipboard service, needs no browser plug-in and no Java, and it does not branch on the protocol version anywhere in the code. It behaves the same on iLO 5 as on the legacy V1 protocol of iLO 4, where the firmware has no clipboard feature to offer in the first place.
+
 ### Direction and inheritance
 
 Every map translates one local source layout into the remote US layout. The direction never changes:
