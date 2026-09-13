@@ -117,6 +117,10 @@ type appWindow struct {
 	uiMu  sync.Mutex
 	uiFns []func()
 
+	// decoderMu guards the decoder and the pixels behind w.frame, which the
+	// read loop writes while the frame goroutine copies them out.
+	decoderMu sync.Mutex
+
 	keyboardMaps   *keyboardmap.Registry
 	keyboardMapDir string
 	ticker         *time.Ticker
@@ -279,7 +283,11 @@ func (w *appWindow) uploadFrameIfDirty() {
 	if w.frameCopy == nil || !w.frameCopy.Rect.Eq(src.Rect) {
 		w.frameCopy = image.NewRGBA(src.Rect)
 	}
+	// decoderMu keeps Feed out of the framebuffer for the length of the copy,
+	// so a frame never mixes pixels from two decoder passes.
+	w.decoderMu.Lock()
 	copy(w.frameCopy.Pix, src.Pix)
+	w.decoderMu.Unlock()
 	// A fresh ImageOp handle forces the GPU cache to pick up the new pixels.
 	w.frameOp = paint.NewImageOp(w.frameCopy)
 	w.mu.Unlock()

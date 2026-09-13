@@ -4,14 +4,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
 const sectorSize = 2048
 
 type ISO struct {
 	path string
-	file *os.File
 	size int64
+
+	// mu keeps Close from pulling the file descriptor out from under a SCSI
+	// read: those run on separate goroutines.
+	mu   sync.RWMutex
+	file *os.File
 }
 
 func OpenISO(path string) (*ISO, error) {
@@ -50,11 +55,16 @@ func (i *ISO) Size() int64 {
 }
 
 func (i *ISO) ReadAt(offset int64, length int) ([]byte, error) {
-	if i == nil || i.file == nil {
+	if i == nil {
 		return nil, fmt.Errorf("ISO is closed")
 	}
 	if offset < 0 || length < 0 || offset+int64(length) > i.size {
 		return nil, fmt.Errorf("ISO read out of range offset=%d length=%d size=%d", offset, length, i.size)
+	}
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if i.file == nil {
+		return nil, fmt.Errorf("ISO is closed")
 	}
 	buf := make([]byte, length)
 	_, err := i.file.ReadAt(buf, offset)
@@ -65,7 +75,12 @@ func (i *ISO) ReadAt(offset int64, length int) ([]byte, error) {
 }
 
 func (i *ISO) Close() error {
-	if i == nil || i.file == nil {
+	if i == nil {
+		return nil
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.file == nil {
 		return nil
 	}
 	err := i.file.Close()

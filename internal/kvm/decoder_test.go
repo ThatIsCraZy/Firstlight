@@ -81,3 +81,45 @@ func TestDecoderCopiesCompletedBlock(t *testing.T) {
 		t.Fatalf("identical block changed frame revision from %d to %d", firstRevision, d.FrameRevision())
 	}
 }
+
+func TestDecoderPrintCommandEntersPrintStates(t *testing.T) {
+	d := NewDecoder(16, 16)
+	d.cmdLast = 2
+	if !d.processCommand() {
+		t.Fatal("print command was not processed")
+	}
+	if d.nextState != 44 {
+		t.Fatalf("next state=%d want=44 (PRINT0)", d.nextState)
+	}
+}
+
+func TestDecoderConsumesFirmwareMessage(t *testing.T) {
+	d := NewDecoder(16, 16)
+	var gotTag byte
+	var gotText string
+	d.SetFirmwareMessageHandler(func(tag byte, text string) {
+		gotTag, gotText = tag, text
+	})
+
+	// PRINT0 takes the tag byte, PRINT1 the NUL-terminated text. Both read
+	// eight bits, which arrive bit-reversed.
+	d.decoderState = 44
+	stream := []byte{d.reversal[3]}
+	for _, c := range []byte("iLO reset") {
+		stream = append(stream, d.reversal[c])
+	}
+	stream = append(stream, 0)
+	if err := d.Feed(stream); err != nil {
+		t.Fatalf("feed: %v", err)
+	}
+
+	if gotTag != 3 || gotText != "iLO reset" {
+		t.Fatalf("tag=%d text=%q want tag=3 text=%q", gotTag, gotText, "iLO reset")
+	}
+	if d.decoderState != 1 {
+		t.Fatalf("decoder state after message=%d want=1 (START)", d.decoderState)
+	}
+	if d.FrameRevision() != 0 {
+		t.Fatalf("message text reached the framebuffer: revision=%d", d.FrameRevision())
+	}
+}

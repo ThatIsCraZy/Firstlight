@@ -8,6 +8,10 @@ import (
 
 var ErrUnsupportedVideoPacket = errors.New("unsupported KVM video packet")
 
+// maxFirmwareMessage caps a single print command so a corrupt stream cannot
+// grow the buffer without bound.
+const maxFirmwareMessage = 4096
+
 type Framebuffer struct {
 	img *image.RGBA
 }
@@ -184,6 +188,10 @@ func (c *colorCache) updatePixcode() {
 	}
 }
 
+// FirmwareMessageFunc receives the text of a firmware print command. Tags 1
+// to 3 carry a status line, tag 4 an alert the reference viewer shows modally.
+type FirmwareMessageFunc func(tag byte, text string)
+
 type Decoder struct {
 	Framebuffer *Framebuffer
 
@@ -230,8 +238,11 @@ type Decoder struct {
 	cmdBuff       [256]byte
 	cmdCount      int
 	cmdLast       byte
+	printTag      byte
+	printText     []byte
 	halt          bool
 	readyToWrite  bool
+	onFirmware    FirmwareMessageFunc
 	frameRevision uint64
 	encryption    LegacyCipher
 	encryptionID  uint64
@@ -272,6 +283,12 @@ func (d *Decoder) Feed(packet []byte) error {
 	}
 	d.compact()
 	return nil
+}
+
+// SetFirmwareMessageHandler installs the sink for firmware print commands. It
+// runs on the goroutine that calls Feed.
+func (d *Decoder) SetFirmwareMessageHandler(fn FirmwareMessageFunc) {
+	d.onFirmware = fn
 }
 
 func (d *Decoder) ReadyToWrite() bool {
@@ -564,10 +581,20 @@ func (d *Decoder) step() (bool, error) {
 			d.cmdCount = 0
 		}
 	case 44:
+		d.printTag = d.code
+		d.printText = d.printText[:0]
 	case 45:
-		if d.code == 0 {
-			d.nextState = 1
+		if d.code != 0 {
+			if len(d.printText) < maxFirmwareMessage {
+				d.printText = append(d.printText, d.code)
+			}
+			break
 		}
+		if d.onFirmware != nil && len(d.printText) > 0 {
+			d.onFirmware(d.printTag, string(d.printText))
+		}
+		d.printText = d.printText[:0]
+		d.nextState = 1
 	case 38:
 		d.fatalCount++
 		if d.fatalCount == 32768 {
@@ -628,6 +655,10 @@ func (d *Decoder) processCommand() bool {
 	switch d.cmdLast {
 	case 1:
 		d.nextState = 37
+	case 2:
+		// Hand the byte stream to the PRINT states, otherwise the message text
+		// is parsed as video data until a resync recovers.
+		d.nextState = 44
 	case 6:
 		d.clearScreen()
 	case 9:
@@ -645,7 +676,7 @@ func (d *Decoder) processCommand() bool {
 	case 13:
 		d.processHeader(d.cmdBuff[:])
 	case 16:
-	case 2, 3, 4, 5, 7, 8, 10, 128:
+	case 3, 4, 5, 7, 8, 10, 128:
 	}
 	return true
 }

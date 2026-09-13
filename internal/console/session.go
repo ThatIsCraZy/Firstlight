@@ -171,6 +171,11 @@ func openSession(rootCtx, connectCtx context.Context, opts OpenOptions, isoRoot 
 		operations:        make(map[string]*operationRecord),
 		done:              make(chan struct{}),
 	}
+	s.decoder.SetFirmwareMessageHandler(func(tag byte, text string) {
+		if s.logf != nil {
+			s.logf("KVM firmware message address=%q tag=%d text=%q", s.address, tag, text)
+		}
+	})
 	loggedIn = false
 	go s.readLoop(conn, rc.ProtocolVersion <= 1)
 	if cmdConn != nil {
