@@ -19,6 +19,13 @@ func (c *Conn) SendPower(option PowerOption) error {
 	return err
 }
 
+// SendRefresh asks the firmware for a full frame. The decoder requests one
+// after the LATCHED state has counted 32768 bad symbols.
+func (c *Conn) SendRefresh() error {
+	_, err := c.Write([]byte{5, 0})
+	return err
+}
+
 func (c *Conn) SendAllKeysUp() error {
 	return c.SendKeyboardReport(KeyboardReport(0))
 }

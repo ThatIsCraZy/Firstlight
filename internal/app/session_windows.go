@@ -147,20 +147,17 @@ func (w *appWindow) connect(cfg Config) error {
 			}
 		}
 	}
-	decoder := kvm.NewDecoder(800, 600)
-	decoder.SetFirmwareMessageHandler(func(tag byte, text string) {
+	stream := kvm.NewVideoStream(800, 600)
+	stream.SetFirmwareMessageHandler(func(tag byte, text string) {
 		w.logf("firmware message tag=%d text=%q", tag, text)
 	})
 	var shareLeader *kvm.LegacyShareLeader
 	if rc.ProtocolVersion <= 1 && !sharedSession {
 		shareLeader = kvm.NewLegacyShareLeader(conn)
 	}
-	w.decoderMu.Lock()
-	w.decoder = decoder
-	frame := decoder.Framebuffer.Image()
-	w.decoderMu.Unlock()
-
 	w.mu.Lock()
+	w.stream = stream
+	w.frameReady = false
 	w.client, w.conn, w.vm = client, conn, vm
 	w.shareLeader = shareLeader
 	w.sharedSession = sharedSession
@@ -168,7 +165,6 @@ func (w *appWindow) connect(cfg Config) error {
 		w.cmdConn = cmdConn
 	}
 	w.host, w.sessionKey, w.rcInfo = host, client.SessionKey(), rc
-	w.frame = frame
 	w.vmISOPath = ""
 	if vm != nil {
 		w.vmISOPath = cfg.ISOPath
@@ -186,6 +182,9 @@ func (w *appWindow) connect(cfg Config) error {
 }
 
 func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
+	w.mu.Lock()
+	stream := w.stream
+	w.mu.Unlock()
 	buf := make([]byte, 32*1024)
 	readBytes := 0
 	lastReadLog := time.Now()
@@ -208,41 +207,40 @@ func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
 				shareLeader.Broadcast(buf[:n])
 			}
 
-			// Everything the decoder owns is read out in one critical section;
-			// the frame goroutine copies pixels under the same lock.
-			w.decoderMu.Lock()
-			previousEncryptionID := w.decoder.EncryptionID()
-			feedErr := w.decoder.Feed(buf[:n])
-			encryption := w.decoder.Encryption()
-			encryptionChanged := w.decoder.EncryptionID() != previousEncryptionID
-			ready := w.decoder.ReadyToWrite()
-			frame := w.decoder.Framebuffer.Image()
-			w.decoderMu.Unlock()
+			res := stream.Feed(buf[:n])
 
 			if time.Since(lastReadLog) >= time.Second {
-				w.logf("rx video bytes=%d input_ready=%v", readBytes, ready)
+				w.logf("rx video bytes=%d input_ready=%v", readBytes, res.Ready)
 				readBytes = 0
 				lastReadLog = time.Now()
 			}
-			if feedErr != nil {
-				w.logf("decoder unsupported packet after read n=%d: %v", n, feedErr)
+			if res.Err != nil {
+				w.logf("decoder unsupported packet after read n=%d: %v", n, res.Err)
 			}
-			if legacy && encryptionChanged {
-				if cipherErr := conn.SetLegacyKVMEncryption(encryption); cipherErr != nil {
-					w.logf("legacy KVM encryption change failed mode=%d: %v", encryption, cipherErr)
+			if legacy && res.EncryptionChanged {
+				if cipherErr := conn.SetLegacyKVMEncryption(res.Encryption); cipherErr != nil {
+					w.logf("legacy KVM encryption change failed mode=%d: %v", res.Encryption, cipherErr)
 					w.handleDisconnect(fmt.Sprintf("Disconnected: legacy KVM encryption failed: %v", cipherErr))
 					return
 				}
-				w.logf("legacy KVM encryption mode=%d", encryption)
+				w.logf("legacy KVM encryption mode=%d", res.Encryption)
 			}
-			if ready {
+			if res.RefreshRequested {
+				if refreshErr := conn.SendRefresh(); refreshErr != nil {
+					w.logf("frame refresh failed: %v", refreshErr)
+					w.handleDisconnect(fmt.Sprintf("Disconnected: frame refresh failed: %v", refreshErr))
+					return
+				}
+				w.logf("stream latched, requested refresh")
+			}
+			if res.Ready {
 				sendInitialAllKeysUp := false
 				w.mu.Lock()
 				if !w.inputReady {
 					w.inputReady = true
 					sendInitialAllKeysUp = true
 				}
-				w.frame = frame
+				w.frameReady = true
 				w.mu.Unlock()
 				if sendInitialAllKeysUp {
 					w.logf("tx keyboard initial-all-keys-up")
@@ -271,6 +269,7 @@ func (w *appWindow) handleDisconnect(status string) {
 	w.connected = false
 	w.captured = false
 	w.inputReady = false
+	w.frameReady = false
 	w.resetCapturedInput()
 	vm, cmdConn, shareLeader = w.vm, w.cmdConn, w.shareLeader
 	w.vm, w.cmdConn, w.shareLeader = nil, nil, nil

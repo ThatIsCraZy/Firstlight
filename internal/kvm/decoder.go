@@ -234,18 +234,19 @@ type Decoder struct {
 	color        uint16
 	lastColor    uint16
 
-	timeoutCount  int
-	cmdBuff       [256]byte
-	cmdCount      int
-	cmdLast       byte
-	printTag      byte
-	printText     []byte
-	halt          bool
-	readyToWrite  bool
-	onFirmware    FirmwareMessageFunc
-	frameRevision uint64
-	encryption    LegacyCipher
-	encryptionID  uint64
+	timeoutCount    int
+	cmdBuff         [256]byte
+	cmdCount        int
+	cmdLast         byte
+	printTag        byte
+	printText       []byte
+	halt            bool
+	readyToWrite    bool
+	onFirmware      FirmwareMessageFunc
+	frameRevision   uint64
+	refreshRequests uint64
+	encryption      LegacyCipher
+	encryptionID    uint64
 }
 
 func NewDecoder(w, h int) *Decoder {
@@ -289,6 +290,12 @@ func (d *Decoder) Feed(packet []byte) error {
 // runs on the goroutine that calls Feed.
 func (d *Decoder) SetFirmwareMessageHandler(fn FirmwareMessageFunc) {
 	d.onFirmware = fn
+}
+
+// RefreshRequests counts how often the decoder gave up on the stream and wants
+// a full frame. Callers compare it across Feed calls, like EncryptionID.
+func (d *Decoder) RefreshRequests() uint64 {
+	return d.refreshRequests
 }
 
 func (d *Decoder) ReadyToWrite() bool {
@@ -596,10 +603,13 @@ func (d *Decoder) step() (bool, error) {
 		d.printText = d.printText[:0]
 		d.nextState = 1
 	case 38:
-		d.fatalCount++
 		if d.fatalCount == 32768 {
+			// The stream has been unreadable for 32768 symbols. Ask the caller
+			// to request a fresh frame instead of staying latched.
+			d.refreshRequests++
 			d.fatalCount = 0
 		}
+		d.fatalCount++
 	case 34:
 		d.nextBlock(1)
 	case 29:

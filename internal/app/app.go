@@ -92,8 +92,8 @@ type appWindow struct {
 	sharedSession  bool
 	serverPower    string
 	postCode       string
-	decoder        *kvm.Decoder
-	frame          *image.RGBA
+	stream         *kvm.VideoStream
+	frameReady     bool
 	frameDirty     bool
 	frameCopy      *image.RGBA
 	frameOp        paint.ImageOp
@@ -116,10 +116,6 @@ type appWindow struct {
 	// uiMu guards the deferred UI callbacks executed on the frame goroutine.
 	uiMu  sync.Mutex
 	uiFns []func()
-
-	// decoderMu guards the decoder and the pixels behind w.frame, which the
-	// read loop writes while the frame goroutine copies them out.
-	decoderMu sync.Mutex
 
 	keyboardMaps   *keyboardmap.Registry
 	keyboardMapDir string
@@ -160,12 +156,11 @@ func OpenSession(ctx context.Context, cfg Config, onClosed func()) (*SessionWind
 		logFile:        logFile,
 		status:         "Connecting...",
 		serverPower:    "unknown",
-		decoder:        kvm.NewDecoder(800, 600),
+		stream:         kvm.NewVideoStream(800, 600),
 		pressed:        make(map[Key]bool),
 		keyboardMaps:   cfg.KeyboardMaps,
 		keyboardMapDir: cfg.KeyboardMapDir,
 	}
-	w.frame = w.decoder.Framebuffer.Image()
 	w.logf("app start addr=%q user=%q verify_cert=%v share=%v seize=%v debug=%v iso=%q", cfg.Addr, cfg.User, cfg.VerifyCert, cfg.Share, cfg.Seize, cfg.Debug, cfg.ISOPath)
 
 	w.win = new(app.Window)
@@ -274,22 +269,22 @@ func (w *appWindow) markFrameDirty() {
 // and rebuilds the GPU image op.
 func (w *appWindow) uploadFrameIfDirty() {
 	w.mu.Lock()
-	if !w.frameDirty || w.frame == nil {
+	if !w.frameDirty || !w.frameReady {
 		w.mu.Unlock()
 		return
 	}
 	w.frameDirty = false
-	src := w.frame
-	if w.frameCopy == nil || !w.frameCopy.Rect.Eq(src.Rect) {
-		w.frameCopy = image.NewRGBA(src.Rect)
-	}
-	// decoderMu keeps Feed out of the framebuffer for the length of the copy,
-	// so a frame never mixes pixels from two decoder passes.
-	w.decoderMu.Lock()
-	copy(w.frameCopy.Pix, src.Pix)
-	w.decoderMu.Unlock()
+	stream, dst := w.stream, w.frameCopy
+	w.mu.Unlock()
+
+	// CopyFrame holds the stream lock for the copy, so a frame never mixes
+	// pixels from two decoder passes.
+	frameCopy := stream.CopyFrame(dst)
+
+	w.mu.Lock()
+	w.frameCopy = frameCopy
 	// A fresh ImageOp handle forces the GPU cache to pick up the new pixels.
-	w.frameOp = paint.NewImageOp(w.frameCopy)
+	w.frameOp = paint.NewImageOp(frameCopy)
 	w.mu.Unlock()
 	w.invalidate()
 }

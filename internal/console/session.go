@@ -43,14 +43,13 @@ type Session struct {
 	client            *ilo.Client
 	conn              *kvm.Conn
 	cmdConn           *kvm.Conn
-	decoder           *kvm.Decoder
+	stream            *kvm.VideoStream
 	keyboardMaps      *keyboardmap.Registry
 	isoRoot           *ISORoot
 	virtualMediaData  virtualMediaConnectionData
 	mouseX            int
 	mouseY            int
 	mouseButtons      byte
-	decoderMu         sync.Mutex
 	operationMu       sync.Mutex
 	managementMu      sync.Mutex
 	dedupeMu          sync.Mutex
@@ -164,14 +163,14 @@ func openSession(rootCtx, connectCtx context.Context, opts OpenOptions, isoRoot 
 		client:            client,
 		conn:              conn,
 		cmdConn:           cmdConn,
-		decoder:           kvm.NewDecoder(800, 600),
+		stream:            kvm.NewVideoStream(800, 600),
 		keyboardMaps:      keyboardmap.BuiltInRegistry(),
 		isoRoot:           isoRoot,
 		virtualMediaData:  newVirtualMediaConnectionData(host, client.SessionKey(), rc),
 		operations:        make(map[string]*operationRecord),
 		done:              make(chan struct{}),
 	}
-	s.decoder.SetFirmwareMessageHandler(func(tag byte, text string) {
+	s.stream.SetFirmwareMessageHandler(func(tag byte, text string) {
 		if s.logf != nil {
 			s.logf("KVM firmware message address=%q tag=%d text=%q", s.address, tag, text)
 		}
@@ -217,24 +216,26 @@ func (s *Session) readLoop(conn *kvm.Conn, legacy bool) {
 		_ = conn.SetReadDeadline(time.Now().Add(connectionPollInterval))
 		n, readErr := conn.Read(buf)
 		if n > 0 {
-			s.decoderMu.Lock()
-			previousEncryptionID := s.decoder.EncryptionID()
-			feedErr := s.decoder.Feed(buf[:n])
-			if legacy && s.decoder.EncryptionID() != previousEncryptionID {
-				if err := conn.SetLegacyKVMEncryption(s.decoder.Encryption()); err != nil {
-					s.decoderMu.Unlock()
+			res := s.stream.Feed(buf[:n])
+			if res.Err != nil && s.logf != nil {
+				s.logf("KVM decoder warning address=%q bytes=%d error=%v", s.address, n, res.Err)
+			}
+			if legacy && res.EncryptionChanged {
+				if err := conn.SetLegacyKVMEncryption(res.Encryption); err != nil {
 					s.markDisconnected(fmt.Sprintf("legacy KVM encryption failed: %v", err))
 					return
 				}
 			}
-			ready := s.decoder.ReadyToWrite()
-			frameRevision := s.decoder.FrameRevision()
-			bounds := s.decoder.Framebuffer.Image().Bounds()
-			s.decoderMu.Unlock()
-			if feedErr != nil && s.logf != nil {
-				s.logf("KVM decoder warning address=%q bytes=%d error=%v", s.address, n, feedErr)
+			if res.RefreshRequested {
+				if err := conn.SendRefresh(); err != nil {
+					s.markDisconnected(fmt.Sprintf("frame refresh failed: %v", err))
+					return
+				}
+				if s.logf != nil {
+					s.logf("KVM stream latched, requested refresh address=%q", s.address)
+				}
 			}
-			if ready {
+			if res.Ready {
 				firstReady := false
 				now := time.Now().UTC()
 				s.mu.Lock()
@@ -242,11 +243,11 @@ func (s *Session) readLoop(conn *kvm.Conn, legacy bool) {
 					s.inputReady = true
 					firstReady = true
 				}
-				s.width = bounds.Dx()
-				s.height = bounds.Dy()
-				frameChanged := frameRevision > s.frameRevision
+				s.width = res.Bounds.Dx()
+				s.height = res.Bounds.Dy()
+				frameChanged := res.FrameRevision > s.frameRevision
 				if frameChanged {
-					s.frameRevision = frameRevision
+					s.frameRevision = res.FrameRevision
 					s.lastFrameAt = now
 				}
 				if firstReady || frameChanged {
@@ -410,14 +411,14 @@ func (s *Session) snapshotPNG(available bool) ([]byte, error) {
 	if !available {
 		return nil, nil
 	}
-	s.decoderMu.Lock()
-	defer s.decoderMu.Unlock()
-	if s.decoder == nil || s.decoder.Framebuffer == nil || s.decoder.Framebuffer.Image() == nil {
+	if s.stream == nil {
 		return nil, nil
 	}
+	// Encoding runs on a private copy so a slow PNG pass never blocks decoding.
+	frame := s.stream.CopyFrame(nil)
 	var buf bytes.Buffer
 	encoder := png.Encoder{CompressionLevel: png.BestSpeed}
-	if err := encoder.Encode(&buf, s.decoder.Framebuffer.Image()); err != nil {
+	if err := encoder.Encode(&buf, frame); err != nil {
 		return nil, fmt.Errorf("encode console frame: %w", err)
 	}
 	return buf.Bytes(), nil
