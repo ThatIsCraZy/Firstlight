@@ -45,11 +45,34 @@ func TestDecoderReadyToWriteAfterHeader(t *testing.T) {
 	}
 }
 
+// feedCommand replays one firmware command the way the wire carries it:
+// parameters first, opcode last.
+func feedCommand(d *Decoder, opcode byte, params ...byte) {
+	d.cmdCount = 0
+	for _, p := range params {
+		d.pushCommandOctet(p)
+	}
+	d.pushCommandOctet(opcode)
+}
+
+func TestDecoderReadsParametersBeforeTheOpcode(t *testing.T) {
+	d := NewDecoder(2, 2)
+	feedCommand(d, 13, 1, 2, 3, 4)
+	if got := d.commandParams(); string(got) != string([]byte{1, 2, 3, 4}) {
+		t.Fatalf("params=%v want=[1 2 3 4]", got)
+	}
+	if d.cmdLast != 13 {
+		t.Fatalf("opcode=%d want=13", d.cmdLast)
+	}
+	feedCommand(d, 6)
+	if got := d.commandParams(); len(got) != 0 {
+		t.Fatalf("a bare opcode reported params=%v", got)
+	}
+}
+
 func TestDecoderTracksEncryptionCommand(t *testing.T) {
 	d := NewDecoder(2, 2)
-	d.cmdLast = 12
-	d.cmdCount = 1
-	d.cmdBuff[0] = byte(LegacyCipherRC4)
+	feedCommand(d, 12, byte(LegacyCipherRC4))
 	if !d.processCommand() {
 		t.Fatal("encryption command was not processed")
 	}
@@ -57,9 +80,39 @@ func TestDecoderTracksEncryptionCommand(t *testing.T) {
 		t.Fatalf("encryption=%d want=%d", d.Encryption(), LegacyCipherRC4)
 	}
 	firstID := d.EncryptionID()
-	d.cmdBuff[0] = byte(LegacyCipherRC4)
+	feedCommand(d, 12, byte(LegacyCipherRC4))
 	if !d.processCommand() || d.EncryptionID() != firstID+1 {
 		t.Fatal("repeated encryption command did not request a stream reset")
+	}
+}
+
+func TestDecoderIgnoresACommandThatCarriesNoParameter(t *testing.T) {
+	d := NewDecoder(2, 2)
+	feedCommand(d, 12, byte(LegacyCipherAES256))
+	d.processCommand()
+	settled := d.EncryptionID()
+
+	// A bare opcode 12. The buffer still holds AES256 from the command above,
+	// which must not be read as this command's parameter.
+	feedCommand(d, 12)
+	if !d.processCommand() {
+		t.Fatal("bare encryption command was not processed")
+	}
+	if d.EncryptionID() != settled {
+		t.Fatalf("encryption id moved to %d; a stale parameter was applied", d.EncryptionID())
+	}
+	if d.Encryption() != LegacyCipherAES256 {
+		t.Fatalf("encryption=%d want=%d", d.Encryption(), LegacyCipherAES256)
+	}
+
+	// The same for the header command, whose parameters are four octets.
+	before := d.bitsPerColor
+	feedCommand(d, 13, 9)
+	if !d.processCommand() {
+		t.Fatal("short header command was not processed")
+	}
+	if d.bitsPerColor != before {
+		t.Fatalf("short header applied bpc=%d", d.bitsPerColor)
 	}
 }
 

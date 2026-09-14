@@ -237,36 +237,34 @@ func (m *MediaSession) Close() error {
 		// way, which is what the browser client does.
 		_ = m.send(m.header(mediaMsgEject, mediaImageCD, 0))
 		_ = m.send(m.header(mediaMsgClose, 0, 0))
-		m.cancel()
-		err = m.socket.Close()
-		if m.iso != nil {
-			_ = m.iso.Close()
-		}
-		m.mu.Lock()
-		m.transportAlive = false
-		m.mapped = false
-		m.mu.Unlock()
+		err = m.teardown()
 	})
+	return err
+}
+
+// teardown drops the transport and the image. It writes nothing, so it is safe
+// on a channel that has already failed.
+func (m *MediaSession) teardown() error {
+	m.cancel()
+	err := m.socket.Close()
+	if m.iso != nil {
+		_ = m.iso.Close()
+	}
+	m.mu.Lock()
+	m.transportAlive = false
+	m.mapped = false
+	m.mu.Unlock()
 	return err
 }
 
 func (m *MediaSession) readLoop() {
 	defer close(m.done)
-	defer m.cancel()
-	// The image is released here as well, so a channel that dies on its own
-	// does not leave the file open.
-	defer func() {
-		if m.iso != nil {
-			_ = m.iso.Close()
-		}
-	}()
+	// Whatever ends the loop takes the socket and the image with it. A fatal
+	// protocol error used to return here and leave the WebSocket open.
+	defer func() { _ = m.teardown() }()
 	for {
 		message, err := m.socket.ReadMessage()
 		if err != nil {
-			m.mu.Lock()
-			m.transportAlive = false
-			m.mapped = false
-			m.mu.Unlock()
 			m.log("virtual media channel closed: %v", err)
 			return
 		}

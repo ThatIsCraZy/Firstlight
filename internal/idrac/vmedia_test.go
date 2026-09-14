@@ -1,6 +1,7 @@
 package idrac
 
 import (
+	"context"
 	"encoding/binary"
 	"os"
 	"path/filepath"
@@ -308,5 +309,28 @@ func TestMediaStatusTextCoversTheCommonCodes(t *testing.T) {
 	}
 	if got := mediaStatusText(9999); got == "" {
 		t.Fatal("unknown codes still need a message")
+	}
+}
+
+func TestMediaReadLoopReleasesTheTransport(t *testing.T) {
+	media, socket := mediaFixture(t, cdBlockSize)
+	media.ctx, media.cancel = context.WithCancel(context.Background())
+	media.mapped = true
+	// An eject from the host is fatal: handle answers it and then ends the
+	// loop. That used to return without closing the WebSocket.
+	socket.messages = [][]byte{words(mediaMsgEject, mediaImageCD, 0, 1)}
+
+	media.readLoop()
+
+	select {
+	case <-media.Done():
+	default:
+		t.Fatal("the read loop did not signal Done")
+	}
+	if !socket.isClosed() {
+		t.Fatal("the WebSocket stayed open after a fatal media error")
+	}
+	if health := media.Health(); health.TransportAlive || health.DeviceReady {
+		t.Fatalf("health still reports the channel up: %+v", health)
 	}
 }

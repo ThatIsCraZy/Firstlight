@@ -186,7 +186,7 @@ func openSession(rootCtx, connectCtx context.Context, opts OpenOptions, isoRoot 
 		}
 	})
 	loggedIn = false
-	go s.readLoop(conn, rc.ProtocolVersion <= 1)
+	go s.readLoop(conn, rc.ProtocolVersion <= 1, shared)
 	if cmdConn != nil {
 		go s.readCommandLoop(cmdConn)
 	}
@@ -215,7 +215,11 @@ func newKVMInfo(host string, port uint16, sessionKey string, rc *ilo.RCInfo, cha
 	return info
 }
 
-func (s *Session) readLoop(conn *kvm.Conn, legacy bool) {
+// readLoop feeds the video stream. This package never joins someone else's
+// session today, but a follower reads bytes the leader already decoded over a
+// plain peer socket and may write back only keyboard and mouse records, so the
+// encryption and refresh branches are closed for one from the start.
+func (s *Session) readLoop(conn *kvm.Conn, legacy, follower bool) {
 	buf := make([]byte, 32*1024)
 	for {
 		select {
@@ -230,13 +234,13 @@ func (s *Session) readLoop(conn *kvm.Conn, legacy bool) {
 			if res.Err != nil && s.logf != nil {
 				s.logf("KVM decoder warning address=%q bytes=%d error=%v", s.address, n, res.Err)
 			}
-			if legacy && res.EncryptionChanged {
+			if legacy && res.EncryptionChanged && !follower {
 				if err := conn.SetLegacyKVMEncryption(res.Encryption); err != nil {
 					s.markDisconnected(fmt.Sprintf("legacy KVM encryption failed: %v", err))
 					return
 				}
 			}
-			if res.RefreshRequested {
+			if res.RefreshRequested && !follower {
 				if err := conn.SendRefresh(); err != nil {
 					s.markDisconnected(fmt.Sprintf("frame refresh failed: %v", err))
 					return
@@ -581,7 +585,23 @@ func (s *Session) ExecuteOnce(ctx context.Context, operationID, key string, fn f
 	s.operations[operationID] = record
 	s.dedupeMu.Unlock()
 
+	// A panic inside fn used to leave the record unfinished, and a retry on the
+	// same operation_id then waited on a channel nobody would ever close. The
+	// panic still travels; it just leaves an answer behind first.
+	settled := false
+	defer func() {
+		if settled {
+			return
+		}
+		s.dedupeMu.Lock()
+		record.err = errors.New("operation panicked")
+		record.finished = true
+		close(record.done)
+		s.dedupeMu.Unlock()
+	}()
+
 	value, err := fn()
+	settled = true
 	s.dedupeMu.Lock()
 	record.value, record.err, record.finished = value, err, true
 	close(record.done)

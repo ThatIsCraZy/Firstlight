@@ -262,7 +262,7 @@ func (s *Session) handshake(ctx context.Context) error {
 
 	// The firmware opens the conversation with a two-byte request for the
 	// second half of the ticket and stays silent until it arrives.
-	if err := s.awaitKeyRequest(); err != nil {
+	if err := s.awaitKeyRequest(deadline); err != nil {
 		return err
 	}
 	init, err := s.rfb.Handshake(!s.cfg.Exclusive)
@@ -301,31 +301,36 @@ func (s *Session) handshake(ctx context.Context) error {
 
 // awaitKeyRequest waits for the key2 challenge and answers it. Some firmware
 // revisions send the challenge only after the client shows up, so the reply is
-// also sent unprompted after a short wait.
-func (s *Session) awaitKeyRequest() error {
-	type result struct {
-		message []byte
-		err     error
+// also sent unprompted after a short wait. The wait runs on a read deadline
+// rather than in a goroutine: a goroutine left a second reader on the socket
+// once the wait expired, and two readers pull the frame stream apart between
+// them.
+func (s *Session) awaitKeyRequest(handshakeDeadline time.Time) error {
+	wait := time.Now().Add(3 * time.Second)
+	if wait.After(handshakeDeadline) {
+		wait = handshakeDeadline
 	}
-	results := make(chan result, 1)
-	go func() {
-		message, err := s.trans.socket.ReadMessage()
-		results <- result{message, err}
-	}()
-	select {
-	case got := <-results:
-		if got.err != nil {
-			return fmt.Errorf("console channel closed during the key exchange: %w", got.err)
-		}
-		if !IsControlFrame(got.message) || got.message[1] != MsgKey2Request {
+	_ = s.trans.SetReadDeadline(wait)
+	message, err := s.trans.socket.ReadMessage()
+	_ = s.trans.SetReadDeadline(handshakeDeadline)
+	switch {
+	case err == nil:
+		if !IsControlFrame(message) || message[1] != MsgKey2Request {
 			// Not the challenge: hand the bytes to the RFB layer instead.
-			s.trans.push(got.message)
+			s.trans.push(message)
 			return nil
 		}
-	case <-time.After(3 * time.Second):
+	case isReadTimeout(err):
 		s.logEvent("no key challenge arrived, sending the key unprompted")
+	default:
+		return fmt.Errorf("console channel closed during the key exchange: %w", err)
 	}
 	return s.sendRaw(Key2Reply(s.currentKey2()))
+}
+
+func isReadTimeout(err error) bool {
+	var timeout interface{ Timeout() bool }
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
 func (s *Session) currentKey2() string {
@@ -538,6 +543,17 @@ func logEvent(logf func(string, ...any), format string, args ...any) {
 
 func (s *Session) markDisconnected(err error) {
 	s.mu.Lock()
+	connected := s.state.Connected
+	s.mu.Unlock()
+	if !connected {
+		return
+	}
+	// An RFB parse error ends the session on a socket that is still open, and
+	// the transport closes a few lines below. Try the release while there is
+	// still something to write to; on a dead line it simply fails.
+	s.releaseHeldKeys()
+
+	s.mu.Lock()
 	if !s.state.Connected {
 		s.mu.Unlock()
 		return
@@ -556,14 +572,10 @@ func (s *Session) markDisconnected(err error) {
 func (s *Session) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
+		s.releaseHeldKeys()
 		s.mu.Lock()
 		s.closed = true
-		held := s.keyboard.Held()
 		s.mu.Unlock()
-		if held {
-			// Leave no key stuck on the remote machine.
-			_ = s.SendKeyboardReport([10]byte{1})
-		}
 		_ = s.UnmountISO()
 		// The firmware releases the console slot only when the viewer says it
 		// is leaving. Without this the session stays on its books.
@@ -576,6 +588,20 @@ func (s *Session) Close() error {
 		s.markDisconnected(errConsoleClosed)
 	})
 	return err
+}
+
+// releaseHeldKeys puts every key the session is holding back up, so none stays
+// stuck on the remote machine. It has to run before the session is marked
+// closed: ready() refuses every send after that, and the release would never
+// reach the wire.
+func (s *Session) releaseHeldKeys() {
+	s.mu.Lock()
+	held := s.keyboard.Held()
+	s.mu.Unlock()
+	if !held {
+		return
+	}
+	_ = s.SendKeyboardReport([10]byte{1})
 }
 
 func (s *Session) sendRaw(payload []byte) error {

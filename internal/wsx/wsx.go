@@ -67,6 +67,7 @@ type Conn struct {
 	conn net.Conn
 	br   *bufio.Reader
 
+	readMu  sync.Mutex
 	writeMu sync.Mutex
 
 	// subprotocol is what the server selected, empty when it selected none.
@@ -197,6 +198,9 @@ func (c *Conn) SetReadDeadline(t time.Time) error { return c.conn.SetReadDeadlin
 // Fragmented messages are reassembled; ping frames are answered and close
 // frames surface as ErrClosed.
 func (c *Conn) ReadMessage() ([]byte, error) {
+	// A message is several frames, so two callers must not interleave here.
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
 	var assembled []byte
 	fragmented := false
 	for {

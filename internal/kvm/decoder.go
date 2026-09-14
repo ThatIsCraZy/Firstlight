@@ -573,13 +573,7 @@ func (d *Decoder) step() (bool, error) {
 			d.timeoutCount = int(d.countBytes)
 		}
 	case 24:
-		if d.cmdCount != 0 && d.cmdCount-1 < len(d.cmdBuff) {
-			d.cmdBuff[d.cmdCount-1] = d.cmdLast
-		}
-		if d.cmdCount < len(d.cmdBuff) {
-			d.cmdCount++
-		}
-		d.cmdLast = d.code
+		d.pushCommandOctet(d.code)
 	case 46:
 		if d.code == 0 {
 			if !d.processCommand() {
@@ -661,6 +655,29 @@ func (d *Decoder) discardToByteBoundary() bool {
 	return true
 }
 
+// pushCommandOctet takes one octet of a firmware command. The octets arrive
+// parameters first and opcode last, so the newest one is held back in cmdLast
+// and only the octets before it are parameters.
+func (d *Decoder) pushCommandOctet(code byte) {
+	if d.cmdCount != 0 && d.cmdCount-1 < len(d.cmdBuff) {
+		d.cmdBuff[d.cmdCount-1] = d.cmdLast
+	}
+	if d.cmdCount < len(d.cmdBuff) {
+		d.cmdCount++
+	}
+	d.cmdLast = code
+}
+
+// commandParams returns the parameters of the command now in the buffer, which
+// is empty for a bare opcode. Reading cmdBuff without this bound handed a
+// command that carried no parameter the leftover byte from the one before it.
+func (d *Decoder) commandParams() []byte {
+	if d.cmdCount == 0 {
+		return nil
+	}
+	return d.cmdBuff[:d.cmdCount-1]
+}
+
 func (d *Decoder) processCommand() bool {
 	switch d.cmdLast {
 	case 1:
@@ -676,15 +693,15 @@ func (d *Decoder) processCommand() bool {
 			return d.discardToByteBoundary()
 		}
 	case 11:
-		if d.cmdCount > 0 {
-			d.setBitsPerColor(d.cmdBuff[0])
+		if params := d.commandParams(); len(params) > 0 {
+			d.setBitsPerColor(params[0])
 		}
 	case 12:
-		if d.cmdCount > 0 {
-			d.setEncryption(LegacyCipher(d.cmdBuff[0]))
+		if params := d.commandParams(); len(params) > 0 {
+			d.setEncryption(LegacyCipher(params[0]))
 		}
 	case 13:
-		d.processHeader(d.cmdBuff[:])
+		d.processHeader(d.commandParams())
 	case 16:
 	case 3, 4, 5, 7, 8, 10, 128:
 	}

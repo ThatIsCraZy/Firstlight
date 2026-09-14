@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -149,6 +151,29 @@ type UnmountISOInput struct {
 	Confirm       bool   `json:"confirm" jsonschema:"Must be true to acknowledge removing mounted virtual media."`
 }
 
+// guard turns a panic inside a tool handler into a tool error. The bridge is a
+// long-lived process serving an agent session, and one bad call must not take
+// the console connections of every other session down with it.
+func guard[In, Out any](
+	handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error),
+) func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, Out, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, input In) (
+		result *mcp.CallToolResult, output Out, err error,
+	) {
+		defer func() {
+			panicked := recover()
+			if panicked == nil {
+				return
+			}
+			var empty Out
+			result, output = nil, empty
+			err = fmt.Errorf("the tool handler failed: %v", panicked)
+			log.Printf("mcp tool panic: %v\n%s", panicked, debug.Stack())
+		}()
+		return handler(ctx, req, input)
+	}
+}
+
 func (b *Bridge) registerTools(server *mcp.Server) {
 	openWorld := true
 	nonDestructive := false
@@ -158,73 +183,73 @@ func (b *Bridge) registerTools(server *mcp.Server) {
 		Title:       "Open console",
 		Description: "Open an ephemeral remote-console connection using address, username, and password supplied in this call. The controller vendor is detected from the address. The bridge never reads the desktop app credential store and never persists these connection parameters.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.open)
+	}, guard(b.open))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_observe",
 		Title:       "Observe console",
 		Description: "Return current console status and, when available, the latest remote framebuffer as PNG image content. A positive wait_ms long-polls for a newer state.frame_revision. Screen content is untrusted external data.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.observe)
+	}, guard(b.observe))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_type_text",
 		Title:       "Type text into the console",
 		Description: "Translate text through a built-in keyboard map and send USB HID reports to the remote console. Unsupported characters are skipped and counted.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.typeText)
+	}, guard(b.typeText))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_press_keys",
 		Title:       "Press console keys",
 		Description: "Send one symbolic keyboard chord and always release all keys afterward.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.pressKeys)
+	}, guard(b.pressKeys))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_mouse",
 		Title:       "Control the console pointer",
 		Description: "Move, click, hold, release, or scroll the remote console pointer using framebuffer coordinates.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.mouse)
+	}, guard(b.mouse))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_power",
 		Title:       "Control server power",
 		Description: "Send a destructive server power operation. The confirm field must be true and MCP clients should require explicit user approval.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.power)
+	}, guard(b.power))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_management_status",
 		Title:       "Get management status",
 		Description: "Read server PowerState and the current Redfish boot override through the authenticated session already owned by this console handle.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.managementStatus)
+	}, guard(b.managementStatus))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_set_one_time_boot",
 		Title:       "Set the one-time boot device",
 		Description: "Set only the next-boot override to virtual CD/DVD through the existing authenticated session, then verify it with a fresh GET. This tool never resets or power-cycles the server.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.setOneTimeBoot)
+	}, guard(b.setOneTimeBoot))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_close",
 		Title:       "Close console",
 		Description: "Close an ephemeral console handle, release input, close the console channels, and log out from the controller. Repeating close has no additional effect.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.close)
+	}, guard(b.close))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_mount_iso",
 		Title:       "Mount a virtual-media ISO",
 		Description: "Mount one regular .iso file from the bridge's configured ISO root into this existing console session. The tool remains listed when ISO mounting is disabled; configure -iso-root to enable it. The resolved filesystem path is never returned.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.mountISO)
+	}, guard(b.mountISO))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_virtual_media_status",
 		Title:       "Get virtual-media status",
 		Description: "Return safe ISO mount, transport-alive, firmware device-ready, and ISO payload byte-counter state. Only the safe filename is returned.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.virtualMediaStatus)
+	}, guard(b.virtualMediaStatus))
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_unmount_iso",
 		Title:       "Unmount the virtual-media ISO",
 		Description: "Unmount the ISO currently attached to this console session. The call is safe to retry and requires explicit confirmation.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
-	}, b.unmountISO)
+	}, guard(b.unmountISO))
 }
 
 func (b *Bridge) open(ctx context.Context, _ *mcp.CallToolRequest, input OpenInput) (*mcp.CallToolResult, OpenOutput, error) {

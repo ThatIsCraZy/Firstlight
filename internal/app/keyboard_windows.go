@@ -36,7 +36,10 @@ func (w *appWindow) updateKeyboardRepeat() {
 func (w *appWindow) sendKeyboard() {
 	w.mu.Lock()
 	sender := w.sender
-	ready := w.inputReady && w.captured
+	// A paste drives the same keyboard from a worker goroutine. Local keys stay
+	// out of the way until it finishes, otherwise its all-keys-up after each
+	// stroke clears whatever the user is holding down.
+	ready := w.inputReady && w.captured && !w.remoteTyping
 	layout := w.keyboardLayout
 	target := w.targetLayout
 	w.mu.Unlock()

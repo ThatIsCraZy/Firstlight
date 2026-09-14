@@ -2,8 +2,10 @@ package console
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestOpenOptionsValidation(t *testing.T) {
@@ -67,5 +69,32 @@ func TestExecuteOnceDeduplicatesRetry(t *testing.T) {
 	}
 	if _, err := session.ExecuteOnce(context.Background(), "operation-1", "different-input", operation); err == nil {
 		t.Fatal("operation_id reuse with different arguments was accepted")
+	}
+}
+
+func TestExecuteOnceAnswersARetryAfterAPanic(t *testing.T) {
+	s := &Session{operations: make(map[string]*operationRecord)}
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("the panic did not travel out of ExecuteOnce")
+			}
+		}()
+		_, _ = s.ExecuteOnce(context.Background(), "op-1", "key", func() (any, error) {
+			panic("the operation blew up")
+		})
+	}()
+
+	// A retry on the same operation_id used to wait on a channel that nobody
+	// would ever close, so it only ended when its own context expired.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := s.ExecuteOnce(ctx, "op-1", "key", func() (any, error) { return "late", nil })
+	if err == nil {
+		t.Fatal("the retry reported success for an operation that panicked")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("the retry blocked until its context expired")
 	}
 }

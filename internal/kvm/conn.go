@@ -3,6 +3,7 @@ package kvm
 import (
 	"context"
 	"crypto/cipher"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -41,7 +42,17 @@ type Conn struct {
 	legacyKey    []byte
 	legacyCipher LegacyCipher
 	legacyShared bool
+	writeBroken  bool
 }
+
+// writeTimeout bounds a single send. A four-octet input record needs no time at
+// all, so exceeding this means the socket is half open rather than busy. It is
+// a variable so tests can shorten it.
+var writeTimeout = 10 * time.Second
+
+// ErrWriteBroken reports a connection whose cipher stream ran ahead of what the
+// peer received. Nothing can be sent on it again.
+var ErrWriteBroken = errors.New("kvm: connection write failed part way through")
 
 func (i Info) networkAddress() string {
 	return net.JoinHostPort(i.Host, strconv.Itoa(int(i.Port)))
@@ -158,13 +169,25 @@ func (c *Conn) Read(p []byte) (int, error) {
 func (c *Conn) Write(p []byte) (int, error) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.writeBroken {
+		return 0, ErrWriteBroken
+	}
 	out := append([]byte(nil), p...)
 	if c.encryptor != nil {
 		c.encryptor.XORKeyStream(out, out)
 	}
+	// Without a deadline a half-open socket blocks the caller for as long as
+	// the operating system keeps retransmitting, which is minutes.
+	_ = c.net.SetWriteDeadline(time.Now().Add(writeTimeout))
 	n, err := c.net.Write(out)
+	_ = c.net.SetWriteDeadline(time.Time{})
 	if err == nil && n != len(out) {
 		err = io.ErrShortWrite
+	}
+	if err != nil {
+		// The cipher stream has already consumed key material for these bytes,
+		// so a partial write leaves the two sides out of step for good.
+		c.writeBroken = true
 	}
 	return n, err
 }

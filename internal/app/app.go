@@ -89,23 +89,41 @@ type appWindow struct {
 	cmdConn       *kvm.Conn
 	// remote is set when a Dell controller answered; the iLO fields above stay
 	// nil then. sender routes input to whichever backend is live.
-	remote         *idrac.Session
-	sender         consoleBackend
-	shareLeader    *kvm.LegacyShareLeader
-	vm             *vmedia.Session
-	host           string
-	sessionKey     string
-	rcInfo         *ilo.RCInfo
-	vmISOPath      string
-	vmConnecting   bool
-	sharedSession  bool
-	serverPower    string
-	postCode       string
-	stream         *kvm.VideoStream
-	frameReady     bool
-	frameDirty     bool
-	frameCopy      *image.RGBA
-	frameOp        paint.ImageOp
+	remote        *idrac.Session
+	sender        consoleBackend
+	shareLeader   *kvm.LegacyShareLeader
+	vm            *vmedia.Session
+	host          string
+	sessionKey    string
+	rcInfo        *ilo.RCInfo
+	vmISOPath     string
+	vmConnecting  bool
+	sharedSession bool
+	serverPower   string
+	postCode      string
+	stream        *kvm.VideoStream
+	frameReady    bool
+	frameDirty    bool
+	// Two buffers, used in turn. Gio may still be reading the pixels handed to
+	// it on the last tick, and paint.ImageOp requires the image it was built
+	// from to stay unchanged, so the next copy goes into the other one.
+	frameBuffers [2]*image.RGBA
+	frameIndex   int
+	// framePainting is the buffer the frame currently on the Gio goroutine is
+	// reading, or -1 between frames. The uploader leaves that one alone: two
+	// ticks can pass during one slow frame, which is long enough to come back
+	// round to the buffer being painted.
+	framePainting int
+	frameOp       paint.ImageOp
+	// remoteTyping is set while the window itself drives the remote keyboard,
+	// so local keystrokes do not interleave with the press and release reports
+	// a paste sends.
+	remoteTyping bool
+	// Set when iLO withdraws a permission over the command channel. The
+	// controller refuses the action from then on, so the menu stops offering it
+	// instead of letting the user send something that is rejected.
+	mediaDenied    bool
+	powerDenied    bool
 	videoRect      image.Rectangle // video area in window client pixels
 	canvasRect     image.Rectangle // canvas area in window client pixels
 	keyboardLayout keyboardLayout
@@ -166,6 +184,7 @@ func OpenSession(ctx context.Context, cfg Config, onClosed func()) (*SessionWind
 		logFile:        logFile,
 		status:         "Connecting...",
 		serverPower:    "unknown",
+		framePainting:  -1,
 		stream:         kvm.NewVideoStream(800, 600),
 		pressed:        make(map[Key]bool),
 		keyboardMaps:   cfg.KeyboardMaps,
@@ -198,10 +217,17 @@ func OpenSession(ctx context.Context, cfg Config, onClosed func()) (*SessionWind
 
 	w.ticker = time.NewTicker(33 * time.Millisecond)
 	go func() {
-		for range w.ticker.C {
-			w.updatePointerCapture()
-			w.updateKeyboardRepeat()
-			w.uploadFrameIfDirty()
+		// Stopping a ticker does not close its channel, so the loop watches the
+		// session context instead and ends with the window.
+		for {
+			select {
+			case <-w.ctx.Done():
+				return
+			case <-w.ticker.C:
+				w.updatePointerCapture()
+				w.updateKeyboardRepeat()
+				w.uploadFrameIfDirty()
+			}
 		}
 	}()
 	w.connectConfigured()
@@ -239,6 +265,10 @@ func (w *appWindow) eventLoop(onClosed func()) {
 			gtx := app.NewContext(&ops, e)
 			w.layout(gtx)
 			e.Frame(gtx.Ops)
+			// The pixels have been handed to the GPU, so the buffer is free.
+			w.mu.Lock()
+			w.framePainting = -1
+			w.mu.Unlock()
 		}
 	}
 }
@@ -287,8 +317,15 @@ func (w *appWindow) uploadFrameIfDirty() {
 		w.mu.Unlock()
 		return
 	}
+	stream, remote := w.stream, w.remote
+	next := 1 - w.frameIndex
+	if next == w.framePainting {
+		// Stay dirty and try again on the next tick.
+		w.mu.Unlock()
+		return
+	}
 	w.frameDirty = false
-	stream, remote, dst := w.stream, w.remote, w.frameCopy
+	dst := w.frameBuffers[next]
 	w.mu.Unlock()
 
 	// Both backends copy under their own lock, so a frame never mixes pixels
@@ -304,7 +341,8 @@ func (w *appWindow) uploadFrameIfDirty() {
 	}
 
 	w.mu.Lock()
-	w.frameCopy = frameCopy
+	w.frameBuffers[next] = frameCopy
+	w.frameIndex = next
 	// A fresh ImageOp handle forces the GPU cache to pick up the new pixels.
 	w.frameOp = paint.NewImageOp(frameCopy)
 	w.mu.Unlock()
@@ -360,9 +398,13 @@ func (w *appWindow) layoutCanvas(gtx layout.Context, size image.Point, offsetY i
 	w.mu.Lock()
 	frameOp := w.frameOp
 	connected := w.connected
+	imgSize := frameOp.Size()
+	if connected && imgSize.X > 0 && imgSize.Y > 0 {
+		// This frame reads that buffer until e.Frame returns.
+		w.framePainting = w.frameIndex
+	}
 	w.mu.Unlock()
 
-	imgSize := frameOp.Size()
 	if !connected || imgSize.X <= 0 || imgSize.Y <= 0 {
 		w.mu.Lock()
 		w.videoRect = image.Rectangle{}
@@ -402,6 +444,24 @@ func (w *appWindow) buildMenuActions() []ui.MenuAction {
 // the whole point of the button: the click lands on the menu bar, not on the
 // video. Both vendors hold the keys down for a moment, so the send runs off
 // the layout goroutine rather than freezing the frame for a quarter second.
+// beginRemoteTyping claims the remote keyboard, reporting false when a paste or
+// a chord already holds it.
+func (w *appWindow) beginRemoteTyping() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.remoteTyping {
+		return false
+	}
+	w.remoteTyping = true
+	return true
+}
+
+func (w *appWindow) endRemoteTyping() {
+	w.mu.Lock()
+	w.remoteTyping = false
+	w.mu.Unlock()
+}
+
 func (w *appWindow) sendCtrlAltDel() {
 	w.mu.Lock()
 	sender := w.sender
@@ -410,12 +470,17 @@ func (w *appWindow) sendCtrlAltDel() {
 	if sender == nil || !ready {
 		return
 	}
+	if !w.beginRemoteTyping() {
+		w.setStatus("The remote keyboard is busy.")
+		return
+	}
 	// The chord ends with every key released. Forget the last report so the
 	// next keystroke is transmitted even if it matches what was sent before.
 	w.input.Lock()
 	w.lastKeyReport = [10]byte{}
 	w.input.Unlock()
 	go func() {
+		defer w.endRemoteTyping()
 		w.logf("tx ctrl-alt-del (button)")
 		if err := sender.SendCtrlAltDel(); err != nil {
 			w.logf("tx ctrl-alt-del error: %v", err)
@@ -426,10 +491,10 @@ func (w *appWindow) sendCtrlAltDel() {
 func (w *appWindow) buildMenus() []ui.MenuDef {
 	mounted := w.mediaMounted()
 	w.mu.Lock()
-	mountEnabled := w.connected && !w.sharedSession && !mounted && !w.vmConnecting
+	mountEnabled := w.connected && !w.sharedSession && !mounted && !w.vmConnecting && !w.mediaDenied
 	unmountEnabled := w.connected && mounted && !w.vmConnecting
 	pasteEnabled := w.connected && w.inputReady
-	powerEnabled := w.connected && w.inputReady && !w.sharedSession
+	powerEnabled := w.connected && w.inputReady && !w.sharedSession && !w.powerDenied
 	sessionMenuEnabled := w.connected && w.remote != nil
 	layout := w.keyboardLayout
 	w.mu.Unlock()
@@ -785,9 +850,14 @@ func (w *appWindow) pasteClipboard() {
 		w.setStatus("Connect before pasting clipboard.")
 		return
 	}
+	if !w.beginRemoteTyping() {
+		w.setStatus("The remote keyboard is busy.")
+		return
+	}
 	w.logf("clipboard paste start runes=%d layout=%s", len([]rune(text)), layout)
 	w.setStatus("Pasting clipboard...")
 	go func() {
+		defer w.endRemoteTyping()
 		sent, skipped, err := sendClipboardText(w.ctx, sender, w.keyboardMaps, layout, target, text)
 		if err != nil {
 			w.logf("clipboard paste failed sent=%d skipped=%d: %v", sent, skipped, err)
@@ -826,12 +896,18 @@ func (w *appWindow) sendPower(option kvm.PowerOption, label string) {
 		return
 	}
 	w.logf("tx power option=%d label=%q", option, label)
-	if err := sender.SendPower(option); err != nil {
-		w.logf("tx power error option=%d label=%q: %v", option, label, err)
-		w.setStatus(fmt.Sprintf("Power command failed: %v", err))
-		return
-	}
-	w.setStatus("Power command sent: " + label)
+	w.setStatus("Sending power command: " + label)
+	// Menu and dialog actions run on the Gio goroutine. A Dell power command
+	// goes out over Redfish with a twenty-second timeout, so sending it here
+	// would stop the window redrawing for that long.
+	go func() {
+		if err := sender.SendPower(option); err != nil {
+			w.logf("tx power error option=%d label=%q: %v", option, label, err)
+			w.setStatus(fmt.Sprintf("Power command failed: %v", err))
+			return
+		}
+		w.setStatus("Power command sent: " + label)
+	}()
 }
 
 // canvasTag identifies the canvas as a pointer-event target.

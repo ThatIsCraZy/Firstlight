@@ -124,6 +124,13 @@ func (w *appWindow) connectIDRAC(cfg Config) error {
 	}
 	state := session.State()
 	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		// The window closed while the console was still coming up. Shutdown
+		// never saw this session, so it is ended here.
+		_ = session.Close()
+		return errWindowClosed
+	}
 	w.remote = session
 	w.sender = idracBackend{session: session}
 	w.frameReady = false

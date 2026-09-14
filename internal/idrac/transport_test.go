@@ -17,6 +17,13 @@ type scriptedWS struct {
 	messages [][]byte
 	index    int
 	written  [][]byte
+	closed   bool
+}
+
+func (s *scriptedWS) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 func (s *scriptedWS) ReadMessage() ([]byte, error) {
@@ -39,7 +46,12 @@ func (s *scriptedWS) WriteMessage(p []byte) error {
 
 func (s *scriptedWS) SetReadDeadline(time.Time) error { return nil }
 
-func (s *scriptedWS) Close() error { return nil }
+func (s *scriptedWS) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return nil
+}
 
 func newScriptedTransport(conn *scriptedWS, control func([]byte)) *transport {
 	return newTransport(conn, control)

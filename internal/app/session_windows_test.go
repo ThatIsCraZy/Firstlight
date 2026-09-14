@@ -123,3 +123,26 @@ func boolPointer(value bool) *bool { return &value }
 func equalBoolPointers(left, right *bool) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
+
+func TestPayloadIsSafeToLogWithholdsIdentifyingCommands(t *testing.T) {
+	withheld := []struct {
+		command uint32
+		carries string
+	}{
+		{commandAcquire, "64-octet user name and address"},
+		{commandShareRequest, "64-octet user name and address"},
+		{commandClipboard, "clipboard content"},
+		{8, "console playback capture"},
+		{17, "unsurveyed failure detail"},
+	}
+	for _, c := range withheld {
+		if payloadIsSafeToLog(c.command) {
+			t.Errorf("command %d carries %s and must not be logged", c.command, c.carries)
+		}
+	}
+	for _, command := range []uint32{commandServerPower, commandHealth, commandPOSTCode} {
+		if !payloadIsSafeToLog(command) {
+			t.Errorf("command %d is a short status code and is useful in the log", command)
+		}
+	}
+}

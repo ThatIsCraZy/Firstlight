@@ -21,6 +21,10 @@ import (
 
 const connectionPollInterval = 500 * time.Millisecond
 
+// errWindowClosed ends a connect whose window closed underneath it. The
+// deferred logout in connect turns it into a clean exit.
+var errWindowClosed = errors.New("session window closed during connect")
+
 func (w *appWindow) connectConfigured() {
 	w.mu.Lock()
 	if w.connecting || w.closed {
@@ -162,6 +166,22 @@ func (w *appWindow) connect(cfg Config) error {
 		shareLeader = kvm.NewLegacyShareLeader(conn)
 	}
 	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		// The window went away while this connect was still running. Nothing is
+		// committed, so shutdown never sees these and has to close them here.
+		if shareLeader != nil {
+			_ = shareLeader.Close()
+		}
+		if vm != nil {
+			_ = vm.Close()
+		}
+		if cmdConn != nil {
+			_ = cmdConn.Close()
+		}
+		_ = conn.Close()
+		return errWindowClosed
+	}
 	w.stream = stream
 	w.frameReady = false
 	w.client, w.conn, w.vm = client, conn, vm
@@ -177,6 +197,7 @@ func (w *appWindow) connect(cfg Config) error {
 		w.vmISOPath = cfg.ISOPath
 	}
 	w.captured, w.inputReady = false, false
+	w.mediaDenied, w.powerDenied = false, false
 	w.resetCapturedInput()
 	w.mu.Unlock()
 	handoff = true
@@ -184,11 +205,16 @@ func (w *appWindow) connect(cfg Config) error {
 	if cmdConn != nil {
 		go w.readCommandLoop(cmdConn)
 	}
-	go w.readLoop(conn, rc.ProtocolVersion <= 1)
+	go w.readLoop(conn, rc.ProtocolVersion <= 1, sharedSession)
 	return nil
 }
 
-func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
+// readLoop feeds the video stream. A follower in a legacy shared session does
+// not own the connection it reads from: the bytes arrive already decoded from
+// the session leader over a plain peer socket, and the leader accepts only
+// keyboard and mouse records back. Encryption changes and refresh requests in
+// that stream belong to the leader's link with iLO, not to this one.
+func (w *appWindow) readLoop(conn *kvm.Conn, legacy, follower bool) {
 	w.mu.Lock()
 	stream := w.stream
 	w.mu.Unlock()
@@ -224,7 +250,9 @@ func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
 			if res.Err != nil {
 				w.logf("decoder unsupported packet after read n=%d: %v", n, res.Err)
 			}
-			if legacy && res.EncryptionChanged {
+			if legacy && res.EncryptionChanged && follower {
+				w.logf("ignoring encryption change mode=%d: the peer link carries plain bytes", res.Encryption)
+			} else if legacy && res.EncryptionChanged {
 				if cipherErr := conn.SetLegacyKVMEncryption(res.Encryption); cipherErr != nil {
 					w.logf("legacy KVM encryption change failed mode=%d: %v", res.Encryption, cipherErr)
 					w.handleDisconnect(fmt.Sprintf("Disconnected: legacy KVM encryption failed: %v", cipherErr))
@@ -232,7 +260,9 @@ func (w *appWindow) readLoop(conn *kvm.Conn, legacy bool) {
 				}
 				w.logf("legacy KVM encryption mode=%d", res.Encryption)
 			}
-			if res.RefreshRequested {
+			if res.RefreshRequested && follower {
+				w.logf("frame refresh not sent: a shared-session peer cannot ask the leader for one")
+			} else if res.RefreshRequested {
 				if refreshErr := conn.SendRefresh(); refreshErr != nil {
 					w.logf("frame refresh failed: %v", refreshErr)
 					w.handleDisconnect(fmt.Sprintf("Disconnected: frame refresh failed: %v", refreshErr))
@@ -281,8 +311,11 @@ func (w *appWindow) handleDisconnect(status string) {
 	w.frameReady = false
 	w.resetCapturedInput()
 	vm, cmdConn, shareLeader = w.vm, w.cmdConn, w.shareLeader
+	conn, client := w.conn, w.client
 	w.vm, w.cmdConn, w.shareLeader = nil, nil, nil
+	w.conn, w.client = nil, nil
 	w.sharedSession = false
+	w.mediaDenied, w.powerDenied = false, false
 	w.vmISOPath = ""
 	w.vmConnecting = false
 	w.serverPower = "unavailable"
@@ -299,6 +332,16 @@ func (w *appWindow) handleDisconnect(status string) {
 	}
 	if remote != nil {
 		_ = remote.Close()
+	}
+	// The video socket and the web login used to survive a disconnect and hold
+	// an iLO session slot until the application exited.
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = client.Logout(ctx)
 	}
 	w.invalidate()
 }
@@ -436,16 +479,70 @@ func (w *appWindow) readCommandLoop(conn *kvm.Conn) {
 	}
 }
 
+// handlePermissionChange reacts to command 11. Losing the console ends the
+// session; the other two only change what the user may do next.
+func (w *appWindow) handlePermissionChange(flags uint16) {
+	switch flags {
+	case permissionConsole:
+		w.handleDisconnect("Disconnected: remote console permission was withdrawn.")
+	case permissionMedia:
+		w.mu.Lock()
+		w.mediaDenied = true
+		w.mu.Unlock()
+		w.setStatus("Virtual media permission was withdrawn.")
+		w.updateChrome()
+	case permissionPower:
+		w.mu.Lock()
+		w.powerDenied = true
+		w.mu.Unlock()
+		w.setStatus("Power control permission was withdrawn.")
+		w.updateChrome()
+	default:
+		w.logf("permission change with unknown flags=%d", flags)
+	}
+}
+
 func isTimeoutError(err error) bool {
 	var timeout interface{ Timeout() bool }
 	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
+// Command-channel IDs from section 10.1 of the iLO wire protocol notes.
 const (
-	commandServerPower  = 3
-	commandPOSTCode     = 5
-	commandShareRequest = 9
+	commandServerPower    = 3
+	commandHealth         = 4
+	commandPOSTCode       = 5
+	commandAcquire        = 6
+	commandMediaAck       = 7
+	commandShareRequest   = 9
+	commandFirmwareUpdate = 10
+	commandPermission     = 11
+	commandClipboard      = 12
+	commandMediaUpdate    = 13
+	commandNotLicensed    = 14
+	commandILOReset       = 15
+	commandHelperStatus   = 16
 )
+
+// Permission flags carried by commandPermission.
+const (
+	permissionConsole = 2
+	permissionMedia   = 3
+	permissionPower   = 4
+)
+
+// payloadIsSafeToLog reports whether a command payload may go in the log file.
+// Commands 6 and 9 carry a 64-octet user name and a 64-octet address, command
+// 12 carries clipboard content, and the remaining payloads are not surveyed, so
+// only the ones known to be short status codes are named here.
+func payloadIsSafeToLog(command uint32) bool {
+	switch command {
+	case commandServerPower, commandHealth, commandPOSTCode, commandMediaAck,
+		commandPermission, commandMediaUpdate, commandHelperStatus:
+		return true
+	}
+	return false
+}
 
 type serverUpdate struct {
 	power    *bool
@@ -471,7 +568,29 @@ func decodeServerUpdate(packet kvm.CommandPacket) (serverUpdate, bool) {
 }
 
 func (w *appWindow) handleCommandPacket(packet kvm.CommandPacket) {
-	w.logf("cmd packet cmd=%d size=%d seq=%d flags=%d data=%x", packet.Command, packet.Size, packet.Seq, packet.Flags, packet.Data)
+	if payloadIsSafeToLog(packet.Command) {
+		w.logf("cmd packet cmd=%d size=%d seq=%d flags=%d data=%x",
+			packet.Command, packet.Size, packet.Seq, packet.Flags, packet.Data)
+	} else {
+		w.logf("cmd packet cmd=%d size=%d seq=%d flags=%d payload=%d bytes withheld",
+			packet.Command, packet.Size, packet.Seq, packet.Flags, len(packet.Data))
+	}
+	// Three commands mean the console is over. Without them the window kept
+	// showing a frozen frame until the socket happened to die.
+	switch packet.Command {
+	case commandFirmwareUpdate:
+		w.handleDisconnect("Disconnected: iLO is updating its firmware.")
+		return
+	case commandNotLicensed:
+		w.handleDisconnect("Disconnected: the remote console is not licensed on this iLO.")
+		return
+	case commandILOReset:
+		w.handleDisconnect("Disconnected: iLO is resetting.")
+		return
+	case commandPermission:
+		w.handlePermissionChange(packet.Flags)
+		return
+	}
 	if packet.Command == commandShareRequest {
 		w.mu.Lock()
 		legacy := w.rcInfo != nil && w.rcInfo.ProtocolVersion <= 1
