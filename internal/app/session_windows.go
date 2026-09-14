@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"firstlight/internal/bmc"
 	"firstlight/internal/ilo"
 	"firstlight/internal/kvm"
 	"firstlight/internal/ui"
@@ -59,6 +60,11 @@ func (w *appWindow) connectConfigured() {
 func (w *appWindow) connect(cfg Config) error {
 	if cfg.Addr == "" || cfg.User == "" || cfg.Password == "" {
 		return errors.New("addr, name, and password are required")
+	}
+	// Which controller answers decides the whole path below, and it is settled
+	// before any credentials go on the wire.
+	if w.detectVendor(cfg) == bmc.VendorDell {
+		return w.connectIDRAC(cfg)
 	}
 	host, _, err := ilo.ParseAddress(cfg.Addr)
 	if err != nil {
@@ -159,6 +165,7 @@ func (w *appWindow) connect(cfg Config) error {
 	w.stream = stream
 	w.frameReady = false
 	w.client, w.conn, w.vm = client, conn, vm
+	w.sender = conn
 	w.shareLeader = shareLeader
 	w.sharedSession = sharedSession
 	if cmdConn != nil {
@@ -265,6 +272,8 @@ func (w *appWindow) handleDisconnect(status string) {
 	var cmdConn *kvm.Conn
 	var shareLeader *kvm.LegacyShareLeader
 	w.mu.Lock()
+	remote := w.remote
+	w.remote, w.sender = nil, nil
 	w.status = status
 	w.connected = false
 	w.captured = false
@@ -287,6 +296,9 @@ func (w *appWindow) handleDisconnect(status string) {
 	}
 	if shareLeader != nil {
 		_ = shareLeader.Close()
+	}
+	if remote != nil {
+		_ = remote.Close()
 	}
 	w.invalidate()
 }

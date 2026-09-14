@@ -1,15 +1,17 @@
 # Firstlight
 
-**A remote console for HPE iLO managed servers.**
+**A remote console for HPE iLO and Dell iDRAC managed servers.**
 
 > [!IMPORTANT]
-> Firstlight is an independent community open-source project. It is **not affiliated with, sponsored by, endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise (HPE)**. It is not an official HPE product, and HPE does not provide support for it.
+> Firstlight is an independent community open-source project. It is **not affiliated with, sponsored by, endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise (HPE) or Dell Technologies**. It is not an official HPE or Dell product, and neither vendor provides support for it.
 
-Firstlight is a native Windows remote-console client for servers managed through HPE Integrated Lights-Out (iLO). It is intended as a community-maintained successor to the legacy `HPLOCONS` client, which is no longer actively maintained, and as a foundation for features that go beyond the original client.
+Firstlight is a native Windows remote-console client for servers managed through HPE Integrated Lights-Out (iLO) or Dell Integrated Dell Remote Access Controller (iDRAC). It began as a community-maintained successor to the legacy `HPLOCONS` client, which is no longer actively maintained, and as a foundation for features that go beyond the original client.
 
-It gives you full keyboard/video/mouse access to a server from power-on through BIOS/UEFI to the running operating system, plus ISO virtual media, power control and boot-override handling — as a single self-contained executable, with no browser plug-in, Java or .NET runtime required. A second executable exposes the same console stack over the Model Context Protocol, so an LLM agent can operate the console under explicit confirmation rules. Successfully tested on HPE ProLiant Gen10 and Gen10 Plus, with the remote-console core additionally confirmed on Gen11 and Gen12; see [Tested hardware](#tested-hardware).
+It gives you full keyboard/video/mouse access to a server from power-on through BIOS/UEFI to the running operating system, plus ISO virtual media, power control and boot-override handling, as a single self-contained executable, with no browser plug-in, Java or .NET runtime required. A second executable exposes the same console stack over the Model Context Protocol, so an LLM agent can operate the console under explicit confirmation rules.
 
-The references to HPE and iLO exist only to explain which systems this software interoperates with.
+You never pick a vendor. Type the address, and Firstlight asks the controller what it is before any credentials go on the wire. See [Tested hardware](#tested-hardware).
+
+The references to HPE, iLO, Dell and iDRAC exist only to explain which systems this software interoperates with.
 
 Project site: **[thatiscrazy.github.io/Firstlight](https://thatiscrazy.github.io/Firstlight/)**
 
@@ -21,15 +23,16 @@ A live remote console on an HPE ProLiant DL345 Gen11: the server's own video in 
 
 ![Firstlight session launcher, dark theme](docs/screenshots/launcher.png)
 
-The persistent multi-session launcher: saved iLO systems on the left, the connection form on the right, drawn by the native Gio interface in the dark theme.
+The persistent multi-session launcher: saved systems on the left, the connection form on the right, drawn by the native Gio interface in the dark theme.
 
 Host names, addresses and account names in both screenshots were replaced with documentation placeholders after capture. Nothing else in either image was altered.
 
 ## Goals
 
-- Provide a maintained, open-source iLO remote-console client.
-- Preserve access to systems for which the legacy client is no longer a practical option.
-- Offer a small, standalone Windows application without requiring the original HPE client.
+- Provide a maintained, open-source remote-console client for the two controller families that dominate x86 server rooms.
+- Preserve access to systems for which the vendor client is no longer a practical option: HPE retired `HPLOCONS`, and Dell never shipped a desktop client at all.
+- Offer a small, standalone Windows application without requiring a vendor client, a browser plug-in or a Java runtime.
+- Treat the vendor as an implementation detail: one window, one set of keyboard maps, one automation surface, whichever controller answers.
 - Keep keyboard translation extensible in data rather than in code: a new layout is a JSON file, not a pull request.
 - Document and test the implementation so that it can be maintained by the community.
 
@@ -38,36 +41,42 @@ Host names, addresses and account names in both screenshots were replaced with d
 ### Remote console
 
 - Full remote KVM: live server video, keyboard and mouse, from the machine's own boot screens through BIOS/UEFI setup to the running operating system.
-- Works without an installed HPE client, browser plug-in, Java runtime or .NET runtime — a single self-contained `.exe`.
-- Speaks both remote-console protocol generations: the legacy V1 protocol used by iLO 4 (including KVM and command-channel encryption) and protocol V2 or newer used by later generations. The protocol version is detected automatically from the iLO itself.
+- Works without an installed vendor client, browser plug-in, Java runtime or .NET runtime: a single self-contained `.exe`.
+- Automatic vendor detection from the address alone, using only documents a controller serves to an unauthenticated client. No vendor dropdown, no guessing.
+- On HPE, speaks both remote-console protocol generations: the legacy V1 protocol used by iLO 4, including KVM and command-channel encryption, and protocol V2 or newer used by later generations. The protocol version comes from the iLO itself.
+- On Dell, speaks the RFB protocol the iDRAC serves over a WebSocket, together with the vendor key exchange and control messages that surround it.
 - Connection modes for a console that is already in use: request a *shared* session or *seize* the session from the current user.
-- When acting as the leader of a legacy shared session, incoming join requests are surfaced with an explicit Allow/Deny prompt.
-- Optional TLS certificate verification for the iLO HTTPS connection.
+- When acting as the leader of a legacy shared HPE session, incoming join requests are surfaced with an explicit Allow/Deny prompt.
+- On Dell, a console held by another viewer is reported as such instead of leaving a black window, and the *Session* menu lists the other sessions or takes the console over.
+- Optional TLS certificate verification for the controller HTTPS connection.
 
 ### Input and keyboard translation
 
 - Symbolic key chords the host operating system would otherwise intercept, including `CTRL+ALT+DEL`.
+- A **Ctrl+Alt+Del** button on the menu bar, on both vendors. Windows claims the real key combination as its Secure Attention Sequence before any application sees it, so a button is the only way to deliver the chord from a Windows workstation.
 - Full mouse support: move, click, click-and-hold, release and scroll.
 - Clipboard-to-HID paste: local clipboard text is retyped into the remote console as real keystrokes, which works even in BIOS/UEFI screens that have no clipboard of their own.
 - A modular keyboard layout system translates your local layout into the US layout the server's firmware expects. US and German are built in and switch at runtime from the *Keyboard Layout* menu; further layouts are JSON files you drop next to the executable. See [Modular keyboard layout system](#modular-keyboard-layout-system).
+- A selectable remote layout for the case where the far side is not US either. The *Remote Layout* menu tells Firstlight which layout the remote operating system applies to the key positions it receives, US by default and German as the second choice. See [The layout on the other side](#the-layout-on-the-other-side).
 
 ### Virtual media
 
 - Mount a local ISO image as a virtual CD/DVD device, for OS installation, driver injection or recovery media.
-- Supported on both the legacy V1 and the V2-or-newer protocol path.
+- Supported on the legacy V1 and V2-or-newer HPE paths and on the Dell media channel.
+- The image is always streamed outbound over the client's own connection. The controller never connects back to the workstation, so virtual media keeps working across a firewall or a NAT boundary. On Dell this deliberately avoids the Redfish `InsertMedia` route, which would require the iDRAC to reach a share on the client side.
 - Mount and dismount at any time from the *Virtual Media* menu, or mount automatically at startup with `-iso`.
 - Detailed transport state: whether the local media session exists, whether the transport connection is alive, whether the server firmware has recognized the device, and how many ISO bytes have been read and delivered.
 
 ### Power and management
 
 - Momentary power press, press-and-hold, cold boot and reset, with confirmation prompts for the destructive actions.
-- Live power and POST status in the status bar where the firmware reports it.
-- Read the current power state and boot override through the authenticated iLO session.
+- Live power status in the status bar, and the POST code where the firmware reports one. Dell controllers do not publish a POST code over the console channel, so that field stays empty there.
+- Read the current power state and boot override through the authenticated controller session.
 - Set a verified one-time virtual CD/DVD boot override without power-cycling the server.
 
 ### Sessions and credentials
 
-- Persistent multi-session launcher: keep a list of iLO systems, connect to several at once, each in its own console window.
+- Persistent multi-session launcher: keep a list of systems of either vendor, connect to several at once, each in its own console window.
 - Saved passwords are encrypted for the current Windows user with DPAPI; saving is opt-in per entry, and entries can be deleted from the launcher.
 - Non-interactive start for scripts and shortcuts via `-addr`, `-name` and `-password`.
 - Accepts the legacy `HPLOCONS` `-lang` argument so existing shortcuts keep working.
@@ -82,7 +91,7 @@ Host names, addresses and account names in both screenshots were replaced with d
 
 ### LLM / automation control (MCP bridge)
 
-- A second, standalone executable exposes the same console stack as Model Context Protocol tools, so an LLM agent can drive an iLO console: open a session, watch the framebuffer, type, press chords, move the mouse, control power, set a one-time boot device and mount or unmount ISO media.
+- A second, standalone executable exposes the same console stack as Model Context Protocol tools, so an LLM agent can drive a console on either vendor: open a session, watch the framebuffer, type, press chords, move the mouse, control power, set a one-time boot device and mount or unmount ISO media.
 - Runs over stdio or stateless Streamable HTTP, and can hold several independent console handles to several servers at the same time.
 - Designed for careful automation: idempotency keys on every mutating call, explicit `confirm: true` on destructive ones, tool annotations that mark destructive operations, and an opt-in allow-list directory for ISO mounting.
 
@@ -90,6 +99,26 @@ Host names, addresses and account names in both screenshots were replaced with d
 
 - Verbose protocol and input logging with `-debug`, or to a chosen file with `-log`, for troubleshooting firmware quirks.
 - Keyboard-map loading problems are reported as warnings instead of failing the session.
+
+## How the two controller families differ
+
+Firstlight hides the difference, but it helps to know what is underneath when something behaves oddly.
+
+| | HPE iLO | Dell iDRAC |
+|---|---|---|
+| Console transport | Proprietary IRC protocol on its own TCP port | RFB (RFC 6143) over a WebSocket on the web port |
+| Video encoding | HPE's own codec | Raw, CopyRect, Hextile, RRE |
+| Keyboard on the wire | USB HID scancodes | X11 keysyms |
+| Authentication | Session key from the JSON login | One-shot ticket pair, second key answered in-band |
+| Virtual media | SCSI tunnel on its own port | Block service on a second WebSocket |
+| Power and boot | Command channel plus Redfish | Console control messages plus Redfish |
+| Concurrent consoles | Firmware dependent | Six, with one virtual-media session |
+
+Two consequences are worth knowing about.
+
+**Keyboard layouts work differently, and better, on Dell.** iLO transports raw scancodes, so Firstlight has to translate a German keystroke into the US scancode the firmware expects; that is what the layout files in [Modular keyboard layout system](#modular-keyboard-layout-system) are for. An iDRAC takes keysyms, which name the character rather than the key position, so the controller does the mapping itself. The layout menu still applies on Dell, because chords and the clipboard typist share the same pipeline, but ordinary typing needs no layout at all there.
+
+**A busy console behaves differently.** An iLO reports the console as busy and Firstlight offers to share or seize it. An iDRAC instead admits the second viewer and then withholds the video until the first one allows sharing. Since the factory default for that decision is `Deny Access`, a console that is already open elsewhere simply stays dark. Firstlight detects this and says so in the status bar, and the *Session* menu shows who is connected or takes the console over.
 
 ## Modular keyboard layout system
 
@@ -107,13 +136,35 @@ That paste path is nothing but HID keyboard reports on the KVM channel you alrea
 
 ### Direction and inheritance
 
-Every map translates one local source layout into the remote US layout. The direction never changes:
+Every map translates one local source layout into key positions, named after the US layout that firmware and installers apply to them:
 
 ```
-source layout (de-DE, fr-FR, ...)  ->  en-US on the remote server
+source layout (de-DE, fr-FR, ...)  ->  en-US key positions
 ```
+
+When the remote operating system applies a different layout, a second step follows; [The layout on the other side](#the-layout-on-the-other-side) describes it.
 
 A protected base map, `us-base`, holds the identity translation: 96 physical key rules and 97 clipboard character rules. A language map declares `"extends": "us-base"` and lists only what differs. The built-in German map is 20 physical rules, because the other 76 keys already behave correctly. Inheritance is resolved when the maps load, nests deeper than one level, and a map that extends itself through a cycle is rejected instead of hanging the loader.
+
+### The layout on the other side
+
+A remote console carries key positions, never characters. Which character a position becomes is decided entirely by the operating system on the far side, and the controller cannot tell you what that decision is: it presents a virtual USB keyboard, which sits below the operating system and is exactly why the console also works in a BIOS that has no layout at all. No Redfish endpoint, on either vendor, reports the remote keyboard layout. The in-band agents, Dell iSM and HPE AMS, report an operating system name and version and nothing about the keyboard.
+
+Firmware, boot menus and installers read positions as US, which is the assumption everything above is built on. A running German Windows does not. There the position a US board prints `-` on carries the sharp s, so an untranslated minus key arrives as `ß`.
+
+The *Remote Layout* menu, or `-remote-layout` on the command line, says which layout the far side applies. `en-US` is the default and changes nothing anywhere in the pipeline. Choosing `de-DE` inserts one more step: each keystroke is first resolved to the character the user meant, then encoded the way a German keyboard produces that character.
+
+```
+local keys  ->  source map  ->  character  ->  remote layout  ->  key position
+```
+
+A keystroke that carries no character passes through untouched, which covers the function keys, the arrows, every chord about positions rather than letters, and the dead keys `^`, `` ` `` and `´`, which need two presses and cannot be expressed as one stroke.
+
+Clipboard paste follows the remote layout alone. Text is made of characters, and which keys produce them is a property of the far side, not of the keyboard on your desk.
+
+For a German server you want both halves: *Keyboard Layout* set to German so the umlaut keys are recognised, and *Remote Layout* set to German so they arrive. With the Default source layout the ASCII keys are correct but the umlauts are not, because that path reads the local keys through a US table and never sees an `ö` in the first place.
+
+The tables behind this were not written by hand. They were read out of the Windows layout DLLs with `MapVirtualKeyEx` and `ToUnicodeEx`, every key position in its plain, shifted and AltGr state, for both layouts.
 
 ### The two rule kinds
 
@@ -172,7 +223,7 @@ The complete format, the full symbolic name tables and a validation checklist li
 
 ### Beyond the desktop client
 
-The MCP bridge uses the same translation layer: `ilo_console_type_text` types through the built-in US or German map, so an agent pasting a German password produces the same HID strokes the desktop client would.
+The MCP bridge uses the same translation layer: `ilo_console_type_text` types through the built-in US or German map, so an agent pasting a German password produces the same HID strokes the desktop client would. The bridge has no remote-layout selection yet and always types for a US remote.
 
 ## Tested hardware
 
@@ -183,22 +234,38 @@ The MCP bridge uses the same translation layer: `ilo_console_type_text` types th
 | HPE ProLiant Gen11 | iLO 6 | V2 or newer | KVM core tested |
 | HPE ProLiant Gen12 | iLO 7 | V2 or newer | KVM core tested |
 | HPE ProLiant Gen8 / Gen9 | iLO 4 | V1 (legacy) | Expected to work; not yet confirmed |
+| Dell PowerEdge R750 | iDRAC9, firmware 7.10.30.00 | RFB over WebSocket | Fully tested |
+| Dell PowerEdge 15G / 16G | iDRAC9 | RFB over WebSocket | Expected to work; not yet confirmed |
+| Dell PowerEdge 14G | iDRAC9, older firmware | RFB over WebSocket | Expected to work; not yet confirmed |
+| Dell PowerEdge 12G / 13G | iDRAC7 / iDRAC8 | Unknown | Untested |
 
 *Fully tested* means verified end to end: console video, keyboard and mouse input, clipboard paste, power actions, one-time boot override, ISO virtual media, and the MCP bridge.
 
-*KVM core tested* means the remote-console core — connecting, video, keyboard and mouse — was confirmed working on that generation. The surrounding features are built on the same code paths and are expected to behave the same, but have not been individually re-verified there.
+*KVM core tested* means the remote-console core, that is connecting, video, keyboard and mouse, was confirmed working on that generation. The surrounding features are built on the same code paths and are expected to behave the same, but have not been individually re-verified there.
 
-Both remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes — iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path. If you run Firstlight against a generation or firmware revision that is not listed above, a short report of what worked is welcome.
+*Untested* means nobody has pointed Firstlight at that combination. It is not a statement that it fails.
+
+Both HPE remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes: iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path.
+
+On the Dell side, every measurement behind the implementation comes from iDRAC9. iDRAC7 and iDRAC8 have never been tried, and the honest answer about them is that nobody here knows. Those generations ship a different console client, but a different client does not necessarily mean a different protocol underneath, and the reverse holds as well. Trying one is cheap and safe: vendor detection reads the unauthenticated Redfish root before any credentials leave the workstation, and a controller that answers differently, or that refuses the console channel, ends up with a failed connection rather than with anything changed on the server. A report either way would be genuinely useful.
+
+Virtual Console and Virtual Media require an Enterprise or Datacenter licence on Dell. That is a firmware restriction, not a limitation of this client.
+
+If you run Firstlight against a generation or firmware revision that is not listed above, a short report of what worked is welcome.
 
 ## Current scope and limitations
 
 - Windows is currently the supported desktop platform.
-- Remote KVM supports legacy protocol V1 (used by iLO 4) and protocol V2 or newer. Compatibility can still vary between firmware revisions.
+- On HPE, remote KVM supports legacy protocol V1 (used by iLO 4) and protocol V2 or newer. Compatibility can still vary between firmware revisions.
+- On Dell, the implementation was written against and verified on iDRAC9. Whether iDRAC7 and iDRAC8 work is untested and unknown; see [Tested hardware](#tested-hardware).
+- Dell controllers allow six concurrent console sessions and exactly one virtual-media session, and the console timeout is disabled in the factory configuration. Firstlight sends the keep-alive and the leave notification the firmware expects, so its own sessions are released when a window closes; a client that is killed outright still leaves a slot occupied until the controller reclaims it.
+- A Dell console that is already in use admits a second viewer only after the first one allows it. With the factory default of `Deny Access` that approval never arrives, and Firstlight reports the console as held rather than showing an empty window.
+- The POST code in the status bar is filled on HPE only. Dell controllers do not publish one over the console channel.
 - Legacy V1 takeover and shared sessions are supported. Joining a shared V1 session opens a listener on the returned remote-console port; Windows Firewall and the network path must allow the current session leader to connect back to that port. Join requests shown to the session leader are denied automatically before the reverse-listener window expires.
 - Virtual media supports ISO images as virtual CD/DVD media on both protocol V1 and V2-or-newer connections.
 - A client that joins a legacy shared session receives KVM/input access only; power controls and virtual media remain owned by the session leader.
-- Keyboard maps translate a local source layout to a remote US layout. Characters without a defined HID sequence are skipped during clipboard input.
-- Compatibility can vary by iLO generation, firmware, licensing, and server configuration.
+- Keyboard maps translate a local source layout into key positions. Which characters those positions produce is decided by the remote layout, US unless the *Remote Layout* menu says otherwise. Characters neither side can produce are counted and skipped during clipboard input, and the dead keys are not translated at all.
+- Compatibility can vary by controller generation, firmware, licensing, and server configuration.
 - This is an independent implementation. Test carefully before relying on it for production recovery workflows.
 
 ## Building from source
@@ -254,24 +321,27 @@ Common options:
 
 | Option | Purpose |
 |---|---|
-| `-addr` | iLO hostname or IP address, optionally followed by the HTTPS port |
-| `-name` | iLO user name |
-| `-password` | iLO password |
+| `-addr` | Controller hostname or IP address, optionally followed by the HTTPS port. The vendor is detected automatically |
+| `-name` | Controller user name |
+| `-password` | Controller password |
 | `-share` | Request a shared remote-console session when the console is busy |
-| `-seize` | Request takeover of a busy remote-console session |
+| `-seize` | Take the console even when it is busy. On iDRAC this also closes the other sessions of this user |
 | `-iso` | Mount a local ISO as virtual CD/DVD media after connecting |
-| `-verify-cert` | Verify the iLO HTTPS certificate |
+| `-remote-layout` | Keyboard layout of the remote operating system: `en-US` (default) or `de-DE` |
+| `-verify-cert` | Verify the controller HTTPS certificate |
 | `-debug` | Enable verbose protocol and input logging |
 | `-log` | Write verbose logging to a specified file |
 
 `-share` and `-seize` are mutually exclusive.
 
+On a Dell controller, `-seize` ends the other web sessions of the same user, which is what releases the console slots they hold. Those slots come free a moment later rather than instantly, and the sessions it ends may belong to a colleague, so it is never done automatically. The same action is available while connected from the *Session* menu, which asks first.
+
 > [!WARNING]
-> A password supplied on the command line may be visible to other local processes. Prefer the interactive launcher on shared systems. TLS certificate verification is disabled by default because many iLO installations use self-signed certificates; use `-verify-cert` whenever the iLO certificate is trusted by the local system.
+> A password supplied on the command line may be visible to other local processes. Prefer the interactive launcher on shared systems. TLS certificate verification is disabled by default because iLO and iDRAC both ship with self-signed certificates; use `-verify-cert` whenever the controller certificate is trusted by the local system.
 
 ## MCP bridge
 
-`Firstlight-mcp.exe` is a standalone translation layer between an MCP client and the existing iLO/KVM protocol implementation. It does not import the desktop application or its `internal/login` credential store, does not enumerate saved launcher sessions, and does not read the current Windows user's DPAPI-protected `cred.json`.
+`Firstlight-mcp.exe` is a standalone translation layer between an MCP client and the console implementations for both vendors. It does not import the desktop application or its `internal/login` credential store, does not enumerate saved launcher sessions, and does not read the current Windows user's DPAPI-protected `cred.json`.
 
 ### Protocol conformance
 
@@ -303,7 +373,7 @@ explicit, revocable handle. That is why `ilo_console_open` returns a
 `console_handle` with its own TTL rather than relying on the transport to remember
 which server a client was talking to.
 
-The MCP client must pass an iLO address or DNS name, username, and password to `ilo_console_open`. These values are used only to establish that live console connection. The password and username are not written to disk or retained in the console object, and a disconnected console is not automatically reconnected. The live iLO session key, network connections, framebuffer, and retry records exist in process memory only until the handle is closed, expires, or the bridge exits.
+The MCP client must pass a controller address or DNS name, username, and password to `ilo_console_open`. These values are used only to establish that live console connection. The password and username are not written to disk or retained in the console object, and a disconnected console is not automatically reconnected. The live session key, network connections, framebuffer, and retry records exist in process memory only until the handle is closed, expires, or the bridge exits.
 
 The default stdio transport is suitable for a locally launched MCP server:
 
@@ -336,35 +406,39 @@ Windows reparse points. Keep the root writable only by trusted local
 administrators: path validation cannot protect against an attacker who can
 replace files concurrently after validation.
 
-A live remote console is necessarily stateful at the iLO protocol level, while the HTTP transport is stateless, so tools refer to the console through the opaque `console_handle` returned by `ilo_console_open`. Multiple handles can control multiple iLO systems concurrently. Idle handles expire after 15 minutes by default; adjust this with `-session-ttl`.
+A live remote console is necessarily stateful at the protocol level, while the HTTP transport is stateless, so tools refer to the console through the opaque `console_handle` returned by `ilo_console_open`. Multiple handles can control multiple systems concurrently, of either vendor. Idle handles expire after 15 minutes by default; adjust this with `-session-ttl`.
 
 Available tools:
 
 | Tool | Purpose |
 |---|---|
-| `ilo_console_open` | Open an ephemeral console from client-supplied iLO connection parameters |
+| `ilo_console_open` | Open an ephemeral console from client-supplied connection parameters |
 | `ilo_console_observe` | Return connection state and the latest framebuffer, optionally waiting up to 30 seconds for a newer `frame_revision` |
 | `ilo_console_type_text` | Type text using a built-in US or German keyboard map |
 | `ilo_console_press_keys` | Send a symbolic chord such as `CTRL+ALT+DELETE` or `F12` |
 | `ilo_console_mouse` | Move, click, hold, release, or scroll the remote pointer |
 | `ilo_console_power` | Send a confirmed power-button, cold-boot, or reset action |
-| `ilo_console_management_status` | Read `PowerState` and the current boot override through the existing authenticated iLO session |
+| `ilo_console_management_status` | Read `PowerState` and the current boot override through the existing authenticated session |
 | `ilo_console_set_one_time_boot` | Set and verify a confirmed one-time virtual CD/DVD boot override without resetting the server |
-| `ilo_console_close` | Release input, close the KVM channels, and log out from iLO |
+| `ilo_console_close` | Release input, close the console channels, and log out from the controller |
 | `ilo_console_mount_iso` | Mount one confirmed ISO from `-iso-root` as virtual CD/DVD media |
 | `ilo_console_virtual_media_status` | Return safe mount, transport, device-ready, ISO-byte-counter, and filename state |
 | `ilo_console_unmount_iso` | Confirmed removal of the current virtual-media ISO |
 
+> [!NOTE]
+> The `ilo_` prefix on the tool names is historical: the bridge predates Dell support. The names are kept so existing MCP client configurations keep working, and every tool operates on whichever controller the address belongs to.
+
+
 Mutating tools and `ilo_console_open` require a client-generated `operation_id`. Reuse an ID only when retrying the exact same call; this prevents a transport retry from typing, clicking, changing the boot override, resetting, mounting, or unmounting twice. Power, one-time boot override, ISO mount, and ISO unmount additionally require `confirm: true`. The one-time boot tool currently accepts only `device: "cd"`, changes only the Redfish next-boot override, and never resets or power-cycles the server. MCP annotations describe destructive operations, but the MCP client remains responsible for its own approval policy. MCP console opens always use `busy_mode: fail`; the bridge never requests a shared or seize session.
 
-For waiting observation, pass the previous `state.frame_revision` as `after_revision` and a `wait_ms` value from 1 through 30000. The call returns when a real framebuffer change arrives, the console disconnects, the request is cancelled, or the wait expires. A zero `wait_ms` always returns the current state immediately. Virtual-media `read_bytes` counts ISO payload loaded from disk, while `delivered_bytes` counts ISO payload accepted by the iLO transport. `mounted` alone means that the local media session exists; `transport_alive` and `device_ready` distinguish an active connection from firmware having recognized the virtual CD device.
+For waiting observation, pass the previous `state.frame_revision` as `after_revision` and a `wait_ms` value from 1 through 30000. The call returns when a real framebuffer change arrives, the console disconnects, the request is cancelled, or the wait expires. A zero `wait_ms` always returns the current state immediately. Virtual-media `read_bytes` counts ISO payload loaded from disk, while `delivered_bytes` counts ISO payload accepted by the controller transport. `mounted` alone means that the local media session exists; `transport_alive` and `device_ready` distinguish an active connection from firmware having recognized the virtual CD device.
 
 Security notes:
 
 - stdio is the preferred transport. HTTP is deliberately restricted to an explicit loopback address because this release does not implement HTTP authentication or remote exposure.
-- The bridge verifies the iLO HTTPS certificate by default. `insecure_skip_verify: true` is an explicit per-connection compatibility opt-out and permits man-in-the-middle attacks.
+- The bridge verifies the controller HTTPS certificate by default. `insecure_skip_verify: true` is an explicit per-connection compatibility opt-out and permits man-in-the-middle attacks.
 - Treat the returned `console_handle` as a bearer capability. Any MCP caller that possesses it can observe or operate that live console until it is closed or expires.
-- The bridge does not log MCP request bodies, passwords, console handles, or full ISO paths. Virtual-media status returns only a safe ISO filename. The MCP client, LLM provider, process supervisor, or a local proxy may still record tool arguments; configure those components accordingly and use a dedicated least-privilege iLO account.
+- The bridge does not log MCP request bodies, passwords, console handles, or full ISO paths. Virtual-media status returns only a safe ISO filename. The MCP client, LLM provider, process supervisor, or a local proxy may still record tool arguments; configure those components accordingly and use a dedicated least-privilege controller account.
 - Run the bridge under a dedicated service account when an operating-system-level boundary from the desktop user's saved sessions is required.
 
 ## Third-party packages and acknowledgements
@@ -398,6 +472,18 @@ Exact versions are pinned in [`go.mod`](go.mod) and cryptographically verified b
 [`go.sum`](go.sum). The complete copyright notices and license texts for all of the
 above are reproduced in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and ship
 with every release archive, as those licenses require.
+
+Nothing in that table is used by the protocol code itself. The console stacks for
+both vendors, the WebSocket client and the RFB implementation are written against
+the Go standard library alone, which is why the executables stay self-contained
+and why a protocol fix never waits on an upstream release.
+
+Two published specifications carried the Dell work, and they deserve naming:
+[RFC 6455](https://www.rfc-editor.org/rfc/rfc6455.html) for the WebSocket layer and
+[RFC 6143](https://www.rfc-editor.org/rfc/rfc6143.html) for the Remote Framebuffer
+protocol. Only the vendor-specific parts around them had to be determined by
+analysis, and those are written down in
+[`IDRAC-Wireprotokol.md`](IDRAC-Wireprotokol.md).
 
 Our sincere thanks go to the Walk Authors, the win Authors, the Go MCP SDK Authors,
 the Go Authors, the JSON Schema Go Project Authors, Segment, Kohei Yoshida, George
@@ -440,13 +526,16 @@ binaries, no resources and no artwork originating from HPE or from any HPE clien
 software, and this repository deliberately ships none of that material.
 
 Public HPE documentation names the TCP services used by the Integrated Remote
-Console but does not define their application-layer wire formats. Those formats
-were therefore determined by analysing the protocol's observable behaviour —
-principally the traffic on the wire — for the single purpose of making an
-independent client interoperate with iLO management processors. The result is
-documented in [`ILO-Wireprotokol.md`](ILO-Wireprotokol.md), which labels every
-material claim as *Verified*, *Observed* or *Inferred* rather than presenting
-guesses as facts.
+Console but does not define their application-layer wire formats. Dell publishes
+no specification for the ticketing, key exchange and control messages that sit
+around the console it serves. Those formats were therefore determined by
+analysing the observable behaviour of each protocol, principally the traffic on
+the wire, for the single purpose of making an independent client interoperate
+with these management processors. The results are documented in
+[`ILO-Wireprotokol.md`](ILO-Wireprotokol.md) and
+[`IDRAC-Wireprotokol.md`](IDRAC-Wireprotokol.md), which label every material
+claim as *Verified*, *Observed* or *Inferred* rather than presenting guesses as
+facts.
 
 In the European Union this kind of interoperability analysis is expressly
 permitted:
@@ -461,18 +550,22 @@ permitted:
   formats are not themselves protected by copyright, so reimplementing observed
   protocol behaviour does not reproduce a protected work.
 
-Firstlight's purpose is interoperability with the iLO management processor, not the
-reproduction of any HPE client's internal structure or expression. Contributions
-must respect that boundary: do not submit HPE binaries, firmware, decompiled
+Firstlight's purpose is interoperability with these management processors, not the
+reproduction of any vendor client's internal structure or expression. Contributions
+must respect that boundary: do not submit vendor binaries, firmware, decompiled
 proprietary sources, extracted resources, credentials or debug logs.
 
 ## Trademark and non-affiliation notice
 
-Hewlett Packard Enterprise, HPE, iLO, Integrated Lights-Out, HPLOCONS, associated product names, and any related logos or marks are trademarks or registered trademarks of Hewlett Packard Enterprise Company and/or its affiliates. **All rights in those marks remain with their respective owners.**
+Hewlett Packard Enterprise, HPE, iLO, Integrated Lights-Out, HPLOCONS, ProLiant, associated product names, and any related logos or marks are trademarks or registered trademarks of Hewlett Packard Enterprise Company and/or its affiliates.
 
-Their names are used in this project solely in a descriptive and nominative manner to identify the systems with which the software is intended to interoperate. That reference does not imply affiliation, sponsorship, certification, endorsement, or approval by HPE.
+Dell, Dell Technologies, iDRAC, Integrated Dell Remote Access Controller, PowerEdge, OpenManage, associated product names, and any related logos or marks are trademarks or registered trademarks of Dell Inc. and/or its subsidiaries.
 
-This project, its authors, maintainers, and contributors are independent of HPE. For official products, documentation, firmware, licensing, and support, consult HPE through its official channels.
+**All rights in those marks remain with their respective owners.**
+
+Their names are used in this project solely in a descriptive and nominative manner to identify the systems with which the software is intended to interoperate. That reference does not imply affiliation, sponsorship, certification, endorsement, or approval by HPE or Dell.
+
+This project, its authors, maintainers, and contributors are independent of both vendors. For official products, documentation, firmware, licensing, and support, consult HPE or Dell through their official channels.
 
 ## Warranty disclaimer
 

@@ -10,6 +10,9 @@ import (
 func (s *Session) ManagementStatus(ctx context.Context) (ManagementStatus, error) {
 	s.managementMu.Lock()
 	defer s.managementMu.Unlock()
+	if s.isRemote() {
+		return s.remoteManagementStatus(ctx)
+	}
 	client, err := s.activeManagementClient()
 	if err != nil {
 		return ManagementStatus{}, err
@@ -27,6 +30,9 @@ func (s *Session) ManagementStatus(ctx context.Context) (ManagementStatus, error
 func (s *Session) SetOneTimeBoot(ctx context.Context, device string) (OneTimeBootResult, error) {
 	s.managementMu.Lock()
 	defer s.managementMu.Unlock()
+	if s.isRemote() {
+		return s.remoteSetOneTimeBoot(ctx, device)
+	}
 	client, err := s.activeManagementClient()
 	if err != nil {
 		return OneTimeBootResult{}, err

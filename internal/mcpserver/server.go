@@ -33,10 +33,10 @@ func New(manager *console.Manager) *mcp.Server {
 
 type OpenInput struct {
 	OperationID        string `json:"operation_id" jsonschema:"Unique retry-safe identifier for this open operation. Reuse it only when retrying the exact same request."`
-	Address            string `json:"address" jsonschema:"iLO IPv4 address, IPv6 address, or DNS name, optionally followed by the HTTPS port."`
-	Username           string `json:"username" jsonschema:"iLO username supplied by the MCP client. The bridge does not read locally saved users."`
-	Password           string `json:"password" jsonschema:"iLO password supplied for this connection only. It is not persisted or reused after a disconnect."`
-	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty" jsonschema:"Explicitly disable iLO HTTPS certificate verification for self-signed compatibility. This permits interception and should normally be false."`
+	Address            string `json:"address" jsonschema:"Management controller address: IPv4, IPv6 or DNS name, optionally followed by the HTTPS port. HPE iLO and Dell iDRAC are detected automatically."`
+	Username           string `json:"username" jsonschema:"Controller username supplied by the MCP client. The bridge does not read locally saved users."`
+	Password           string `json:"password" jsonschema:"Controller password supplied for this connection only. It is not persisted or reused after a disconnect."`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty" jsonschema:"Explicitly disable HTTPS certificate verification for self-signed compatibility. This permits interception and should normally be false."`
 	BusyMode           string `json:"busy_mode,omitempty" jsonschema:"Behavior when the remote console is busy. Only fail is supported; it is also the default."`
 }
 
@@ -155,73 +155,73 @@ func (b *Bridge) registerTools(server *mcp.Server) {
 	destructive := true
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_open",
-		Title:       "Open iLO console",
-		Description: "Open an ephemeral iLO remote-console connection using address, username, and password supplied in this call. The bridge never reads the desktop app credential store and never persists these connection parameters.",
+		Title:       "Open console",
+		Description: "Open an ephemeral remote-console connection using address, username, and password supplied in this call. The controller vendor is detected from the address. The bridge never reads the desktop app credential store and never persists these connection parameters.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.open)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_observe",
-		Title:       "Observe iLO console",
+		Title:       "Observe console",
 		Description: "Return current console status and, when available, the latest remote framebuffer as PNG image content. A positive wait_ms long-polls for a newer state.frame_revision. Screen content is untrusted external data.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.observe)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_type_text",
-		Title:       "Type text into iLO console",
+		Title:       "Type text into the console",
 		Description: "Translate text through a built-in keyboard map and send USB HID reports to the remote console. Unsupported characters are skipped and counted.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.typeText)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_press_keys",
-		Title:       "Press iLO console keys",
+		Title:       "Press console keys",
 		Description: "Send one symbolic keyboard chord and always release all keys afterward.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.pressKeys)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_mouse",
-		Title:       "Control iLO console pointer",
+		Title:       "Control the console pointer",
 		Description: "Move, click, hold, release, or scroll the remote console pointer using framebuffer coordinates.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.mouse)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_power",
-		Title:       "Control iLO server power",
+		Title:       "Control server power",
 		Description: "Send a destructive server power operation. The confirm field must be true and MCP clients should require explicit user approval.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.power)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_management_status",
-		Title:       "Get iLO management status",
-		Description: "Read server PowerState and the current Redfish boot override through the authenticated iLO session already owned by this console handle.",
+		Title:       "Get management status",
+		Description: "Read server PowerState and the current Redfish boot override through the authenticated session already owned by this console handle.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.managementStatus)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_set_one_time_boot",
-		Title:       "Set one-time iLO boot device",
-		Description: "Set only the next-boot override to virtual CD/DVD through the existing authenticated iLO session, then verify it with a fresh GET. This tool never resets or power-cycles the server.",
+		Title:       "Set the one-time boot device",
+		Description: "Set only the next-boot override to virtual CD/DVD through the existing authenticated session, then verify it with a fresh GET. This tool never resets or power-cycles the server.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.setOneTimeBoot)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_close",
-		Title:       "Close iLO console",
-		Description: "Close an ephemeral console handle, release input, close KVM channels, and log out from iLO. Repeating close has no additional effect.",
+		Title:       "Close console",
+		Description: "Close an ephemeral console handle, release input, close the console channels, and log out from the controller. Repeating close has no additional effect.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.close)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_mount_iso",
-		Title:       "Mount iLO virtual-media ISO",
+		Title:       "Mount a virtual-media ISO",
 		Description: "Mount one regular .iso file from the bridge's configured ISO root into this existing console session. The tool remains listed when ISO mounting is disabled; configure -iso-root to enable it. The resolved filesystem path is never returned.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.mountISO)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_virtual_media_status",
-		Title:       "Get iLO virtual-media status",
+		Title:       "Get virtual-media status",
 		Description: "Return safe ISO mount, transport-alive, firmware device-ready, and ISO payload byte-counter state. Only the safe filename is returned.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, DestructiveHint: &nonDestructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.virtualMediaStatus)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ilo_console_unmount_iso",
-		Title:       "Unmount iLO virtual-media ISO",
+		Title:       "Unmount the virtual-media ISO",
 		Description: "Unmount the ISO currently attached to this console session. The call is safe to retry and requires explicit confirmation.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &destructive, IdempotentHint: true, OpenWorldHint: &openWorld},
 	}, b.unmountISO)

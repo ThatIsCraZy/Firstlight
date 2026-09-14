@@ -19,16 +19,17 @@ import (
 func main() {
 	var cfg app.Config
 	var lang string
-	flag.StringVar(&cfg.Addr, "addr", "", "iLO address, optionally address:https_port")
-	flag.StringVar(&cfg.User, "name", "", "iLO user name")
-	flag.StringVar(&cfg.Password, "password", "", "iLO password")
+	flag.StringVar(&cfg.Addr, "addr", "", "controller address, optionally address:https_port; HPE iLO and Dell iDRAC are detected automatically")
+	flag.StringVar(&cfg.User, "name", "", "controller user name")
+	flag.StringVar(&cfg.Password, "password", "", "controller password")
 	flag.StringVar(&cfg.ISOPath, "iso", "", "local ISO file to mount as virtual CD/DVD media")
 	flag.StringVar(&lang, "lang", "en", "accepted for HPLOCONS CLI compatibility")
-	flag.BoolVar(&cfg.Share, "share", false, "request shared console when iLO reports the console is busy")
-	flag.BoolVar(&cfg.Seize, "seize", false, "seize console when iLO reports the console is busy")
-	flag.BoolVar(&cfg.VerifyCert, "verify-cert", false, "verify the iLO HTTPS certificate")
+	flag.BoolVar(&cfg.Share, "share", false, "request a shared console when the controller reports the console is busy")
+	flag.BoolVar(&cfg.Seize, "seize", false, "take the console even when it is busy; on iDRAC this also closes the other sessions of this user")
+	flag.BoolVar(&cfg.VerifyCert, "verify-cert", false, "verify the controller HTTPS certificate")
 	flag.BoolVar(&cfg.Debug, "debug", false, "write verbose protocol/input status to Firstlight-debug.log")
 	flag.StringVar(&cfg.LogPath, "log", "", "verbose log file path; enables logging even without -debug")
+	flag.StringVar(&cfg.TargetLayout, "remote-layout", "", "keyboard layout the remote operating system runs: en-US (default) or de-DE")
 	flag.Parse()
 	executablePath, executableErr := os.Executable()
 	if executableErr != nil {
@@ -45,6 +46,9 @@ func main() {
 	_ = lang
 	if cfg.Share && cfg.Seize {
 		log.Fatal("-share and -seize are mutually exclusive")
+	}
+	if _, ok := keyboardmap.TargetByID(cfg.TargetLayout); !ok {
+		log.Fatalf("unknown -remote-layout %q; known layouts are en-US and de-DE", cfg.TargetLayout)
 	}
 
 	// Gio requires the OS main thread; the application logic runs beside it

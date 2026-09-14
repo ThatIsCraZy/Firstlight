@@ -35,15 +35,16 @@ func (w *appWindow) updateKeyboardRepeat() {
 
 func (w *appWindow) sendKeyboard() {
 	w.mu.Lock()
-	conn := w.conn
+	sender := w.sender
 	ready := w.inputReady && w.captured
 	layout := w.keyboardLayout
+	target := w.targetLayout
 	w.mu.Unlock()
-	if conn == nil || !ready {
+	if sender == nil || !ready {
 		return
 	}
 	w.input.Lock()
-	report := w.keyboardReportLocked(layout)
+	report := w.keyboardReportLocked(layout, target)
 	if report == w.lastKeyReport {
 		w.input.Unlock()
 		return
@@ -56,38 +57,38 @@ func (w *appWindow) sendKeyboard() {
 	w.input.Unlock()
 	if ctrlAltDel {
 		w.logf("tx keyboard ctrl-alt-del")
-		_ = conn.SendCtrlAltDel()
+		_ = sender.SendCtrlAltDel()
 		return
 	}
 	w.logf("tx keyboard report=%x", report)
-	if err := conn.SendKeyboardReport(report); err != nil {
+	if err := sender.SendKeyboardReport(report); err != nil {
 		w.logf("tx keyboard report error: %v", err)
 	}
 }
 
 // keyboardReportLocked requires w.input to be held.
-func (w *appWindow) keyboardReportLocked(layout keyboardLayout) [10]byte {
-	if layout == keyboardLayoutDefault && w.rawInput {
+func (w *appWindow) keyboardReportLocked(layout keyboardLayout, target *keyboardmap.Target) [10]byte {
+	if target.IsDefault() && layout == keyboardLayoutDefault && w.rawInput {
 		return hpKeyboardReport(w.rawPressed)
 	}
 	w.syncPressedModifiersLocked()
-	return keyboardReportForRegistry(w.keyboardMaps, layout, w.pressed)
+	return keyboardReportForRegistry(w.keyboardMaps, layout, target, w.pressed)
 }
 
 func keyboardReportForLayout(layout keyboardLayout, pressed map[Key]bool) [10]byte {
-	return keyboardReportForRegistry(keyboardmap.BuiltInRegistry(), layout, pressed)
+	return keyboardReportForRegistry(keyboardmap.BuiltInRegistry(), layout, keyboardmap.DefaultTarget(), pressed)
 }
 
-func keyboardReportForRegistry(registry *keyboardmap.Registry, layout keyboardLayout, pressed map[Key]bool) [10]byte {
+func keyboardReportForRegistry(registry *keyboardmap.Registry, layout keyboardLayout, target *keyboardmap.Target, pressed map[Key]bool) [10]byte {
 	if !hasPressedNonModifierKey(pressed) {
 		return kvm.KeyboardReport(0)
 	}
-	mapID := string(layout)
-	if layout == keyboardLayoutDefault {
-		// Preserve the established semantic AltGr behavior. The live Default path
-		// still uses hpKeyboardReport and remains physical pass-through.
-		mapID = string(keyboardLayoutForceGerman)
+	if !target.IsDefault() {
+		if report, ok := retargetedReport(registry, layout, target, pressed); ok {
+			return report
+		}
 	}
+	mapID := altGrMapID(layout)
 	altGr := isAltGrCombo(registry, mapID, pressed)
 	if altGr {
 		return mappedKeyboardReport(registry, mapID, keyboardmap.StateAltGr, pressed)
@@ -100,6 +101,91 @@ func keyboardReportForRegistry(registry *keyboardmap.Registry, layout keyboardLa
 		return mappedKeyboardReport(registry, string(layout), state, pressed)
 	}
 	return defaultKeyboardReport(pressed)
+}
+
+// altGrMapID names the map the AltGr detection consults. The Default layout
+// has no map of its own, and the established behaviour is to borrow the German
+// one so AltGr keeps its semantic meaning there.
+func altGrMapID(layout keyboardLayout) string {
+	if layout == keyboardLayoutDefault {
+		return string(keyboardLayoutForceGerman)
+	}
+	return string(layout)
+}
+
+// sourceLocaleFor names the layout on the user's desk. It comes from the
+// selected map; the Default layout reports US, because its virtual keys are
+// read through a US table.
+func sourceLocaleFor(registry *keyboardmap.Registry, layout keyboardLayout) string {
+	if layout == keyboardLayoutDefault {
+		return "en-US"
+	}
+	if info, ok := registry.Info(string(layout)); ok {
+		return info.SourceLocale
+	}
+	return ""
+}
+
+// retargetedReport builds the report for a remote that does not run the US
+// layout. It resolves every pressed key to the character the user meant, then
+// encodes that character the way the remote layout produces it.
+//
+// The whole report is rejected as soon as one key cannot be resolved, which is
+// the case for the function keys, the arrows, the dead keys and every chord
+// that is about positions rather than characters. The caller then falls back to
+// the untranslated path, so nothing that worked before can break here.
+func retargetedReport(registry *keyboardmap.Registry, layout keyboardLayout, target *keyboardmap.Target, pressed map[Key]bool) ([10]byte, bool) {
+	locale := sourceLocaleFor(registry, layout)
+	if locale == "" {
+		return [10]byte{}, false
+	}
+	state := keyboardmap.StatePlain
+	switch {
+	case isAltGrCombo(registry, altGrMapID(layout), pressed):
+		state = keyboardmap.StateAltGr
+	case pressed[KeyShift] || pressed[KeyLShift] || pressed[KeyRShift]:
+		state = keyboardmap.StateShift
+	}
+	var keys []byte
+	mod := byte(0)
+	for key, isDown := range pressed {
+		if !isDown || isModifierKey(key) {
+			continue
+		}
+		char, ok := keyboardmap.CharForVK(locale, uint32(key), state)
+		if !ok {
+			return [10]byte{}, false
+		}
+		stroke, ok := target.Stroke(char)
+		if !ok {
+			return [10]byte{}, false
+		}
+		mod |= stroke.Modifiers
+		keys = append(keys, stroke.Key)
+	}
+	if len(keys) == 0 {
+		return [10]byte{}, false
+	}
+	if state != keyboardmap.StateAltGr {
+		// Shift and AltGr belong to the encoded character, the remaining
+		// modifiers belong to the user and are carried over.
+		if pressed[KeyLControl] || pressed[KeyControl] {
+			mod |= 1
+		}
+		if pressed[KeyRControl] {
+			mod |= 16
+		}
+		if pressed[KeyLAlt] || pressed[KeyAlt] {
+			mod |= 4
+		}
+		if pressed[KeyLWin] {
+			mod |= 8
+		}
+		if pressed[KeyRWin] {
+			mod |= 128
+		}
+	}
+	return kvm.KeyboardReport(mod, keys...), true
 }
 
 func defaultKeyboardReport(pressed map[Key]bool) [10]byte {
@@ -240,22 +326,31 @@ func hasPressedNonModifierKey(pressed map[Key]bool) bool {
 }
 
 func clipboardReportForRune(layout keyboardLayout, r rune) ([10]byte, bool) {
-	strokes, ok := clipboardStrokesForRune(keyboardmap.BuiltInRegistry(), layout, r)
+	strokes, ok := clipboardStrokesForRune(keyboardmap.BuiltInRegistry(), layout, keyboardmap.DefaultTarget(), r)
 	if !ok || len(strokes) != 1 {
 		return [10]byte{}, false
 	}
 	return kvm.KeyboardReport(strokes[0].Modifiers, strokes[0].Key), true
 }
 
-func clipboardStrokesForRune(registry *keyboardmap.Registry, layout keyboardLayout, r rune) ([]keyboardmap.Stroke, bool) {
+// clipboardStrokesForRune resolves one character. Which keys produce it is a
+// property of the remote layout alone, so a non-US target answers this without
+// consulting the local map at all.
+func clipboardStrokesForRune(registry *keyboardmap.Registry, layout keyboardLayout, target *keyboardmap.Target, r rune) ([]keyboardmap.Stroke, bool) {
+	if !target.IsDefault() {
+		if stroke, ok := target.Stroke(r); ok {
+			return []keyboardmap.Stroke{stroke}, true
+		}
+		return nil, false
+	}
 	return registry.ResolveText(string(layout), r)
 }
 
-func sendClipboardText(ctx context.Context, sender keyboardReportSender, registry *keyboardmap.Registry, layout keyboardLayout, text string) (int, int, error) {
-	return sendClipboardTextWithDelay(ctx, sender, registry, layout, text, 8*time.Millisecond)
+func sendClipboardText(ctx context.Context, sender keyboardReportSender, registry *keyboardmap.Registry, layout keyboardLayout, target *keyboardmap.Target, text string) (int, int, error) {
+	return sendClipboardTextWithDelay(ctx, sender, registry, layout, target, text, 8*time.Millisecond)
 }
 
-func sendClipboardTextWithDelay(ctx context.Context, sender keyboardReportSender, registry *keyboardmap.Registry, layout keyboardLayout, text string, delay time.Duration) (int, int, error) {
+func sendClipboardTextWithDelay(ctx context.Context, sender keyboardReportSender, registry *keyboardmap.Registry, layout keyboardLayout, target *keyboardmap.Target, text string, delay time.Duration) (int, int, error) {
 	if err := sender.SendAllKeysUp(); err != nil {
 		return 0, 0, err
 	}
@@ -269,7 +364,7 @@ func sendClipboardTextWithDelay(ctx context.Context, sender keyboardReportSender
 		if r == '\r' {
 			continue
 		}
-		strokes, ok := clipboardStrokesForRune(registry, layout, r)
+		strokes, ok := clipboardStrokesForRune(registry, layout, target, r)
 		if !ok {
 			skipped++
 			continue

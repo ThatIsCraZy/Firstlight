@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Firstlight, a remote console for HPE iLO managed servers</title>
-<meta name="description" content="Firstlight is an independent, open-source Windows remote-console client for servers managed through HPE Integrated Lights-Out, with a modular JSON keyboard layout system, ISO virtual media, power control and an MCP bridge.">
+<title>Firstlight, a remote console for HPE iLO and Dell iDRAC managed servers</title>
+<meta name="description" content="Firstlight is an independent, open-source Windows remote-console client for servers managed through HPE Integrated Lights-Out or Dell iDRAC, with automatic vendor detection, a modular JSON keyboard layout system, ISO virtual media, power control and an MCP bridge.">
 <link rel="icon" href="icon.png" type="image/png">
-<meta property="og:title" content="Firstlight, a remote console for HPE iLO managed servers">
-<meta property="og:description" content="Native Windows KVM client for HPE iLO: modular JSON keyboard layouts, ISO virtual media, power control and an MCP bridge. Independent open-source project.">
+<meta property="og:title" content="Firstlight, a remote console for HPE iLO and Dell iDRAC managed servers">
+<meta property="og:description" content="Native Windows KVM client for HPE iLO and Dell iDRAC: the vendor is detected from the address. Modular JSON keyboard layouts, ISO virtual media, power control and an MCP bridge. Independent open-source project.">
 <meta property="og:image" content="screenshots/session.png">
 <meta property="og:type" content="website">
 <style>
@@ -183,12 +183,13 @@ footer a { color: var(--ink-dim); }
 
 <div class="wrap hero">
   <span class="eyebrow">Independent open-source project</span>
-  <h1>A remote console for HPE&nbsp;iLO managed servers.</h1>
+  <h1>A remote console for HPE&nbsp;iLO and Dell&nbsp;iDRAC managed servers.</h1>
   <p class="lede">
-    Firstlight is a native Windows KVM client for servers managed through HPE Integrated Lights-Out.
-    Full keyboard, video and mouse access from power-on through BIOS/UEFI to the running operating system,
-    plus ISO virtual media, power control and boot override. One self-contained executable, with no browser
-    plug-in, Java or .NET runtime.
+    Firstlight is a native Windows KVM client for servers managed through HPE Integrated Lights-Out or the
+    Integrated Dell Remote Access Controller. You never pick a vendor: type the address, and Firstlight asks
+    the controller what it is before any credentials go on the wire. Full keyboard, video and mouse access from
+    power-on through BIOS/UEFI to the running operating system, plus ISO virtual media, power control and boot
+    override. One self-contained executable, with no browser plug-in, Java or .NET runtime.
   </p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/ThatIsCraZy/Firstlight">View on GitHub</a>
@@ -217,16 +218,20 @@ footer a { color: var(--ink-dim); }
 
     <div class="grid">
       <div class="card">
-        <h3>Both protocol generations</h3>
-        <p>The legacy V1 protocol used by iLO 4, including KVM and command-channel encryption, and protocol V2 or newer for later generations. The version is detected from the iLO itself.</p>
+        <h3>No vendor dropdown</h3>
+        <p>The address alone decides. Firstlight reads the documents a controller serves to an unauthenticated client, recognises an iLO or an iDRAC from them, and connects the matching stack. Nothing to select, nothing to get wrong.</p>
+      </div>
+      <div class="card">
+        <h3>Every protocol generation</h3>
+        <p>On HPE, the legacy V1 protocol of iLO 4 including KVM and command-channel encryption, and V2 or newer for later generations. On Dell, the RFB protocol the iDRAC serves over a WebSocket, with the vendor key exchange and control messages around it.</p>
       </div>
       <div class="card">
         <h3>Shared and seized sessions</h3>
-        <p>Join a busy console as a shared session or seize it. As the leader of a legacy shared session you get an explicit Allow/Deny prompt for incoming join requests.</p>
+        <p>Join a busy console as a shared session or seize it. On HPE you get an explicit Allow/Deny prompt for incoming join requests. On Dell a console held by someone else is reported as held instead of showing a black window, and the Session menu lists the other viewers or takes the console over.</p>
       </div>
       <div class="card">
         <h3>ISO virtual media</h3>
-        <p>Mount a local ISO as a virtual CD/DVD on both protocol paths, for installation, driver injection or recovery. Transport state reports whether firmware actually saw the device.</p>
+        <p>Mount a local ISO as a virtual CD/DVD on every path, for installation, driver injection or recovery. The image always streams outbound over the connection you already have, so the controller never connects back and a firewall or NAT boundary does not break it.</p>
       </div>
       <div class="card">
         <h3>Power and boot override</h3>
@@ -234,7 +239,7 @@ footer a { color: var(--ink-dim); }
       </div>
       <div class="card">
         <h3>Multi-session launcher</h3>
-        <p>Keep a list of iLO systems and connect to several at once, each in its own window. Saved passwords are encrypted for the current Windows user with DPAPI, opt-in per entry.</p>
+        <p>Keep a list of systems of either family and connect to several at once, each in its own window. Saved passwords are encrypted for the current Windows user with DPAPI, opt-in per entry.</p>
       </div>
       <div class="card">
         <h3>Native, not a web view</h3>
@@ -257,7 +262,38 @@ footer a { color: var(--ink-dim); }
       Firstlight fixes that in data instead of in code. Every layout is a JSON file, so a new language needs no Go change,
       no rebuild and no pull request. US and German ship built in and switch at runtime from the <strong>Keyboard Layout</strong> menu.
     </p>
+    <p>
+      Dell solved the same problem in firmware. An iDRAC carries X11 keysyms, which name the character rather than the key
+      position, so the controller does the mapping itself and ordinary typing needs no layout file at all. The menu still
+      applies on Dell, because key chords and the clipboard typist run through the same pipeline on both families.
+    </p>
 
+
+    <div class="pitch">
+      <h3>The layout on the other side</h3>
+      <p>
+        A remote console carries key positions, never characters. What a position becomes is decided by the operating
+        system on the far side, and no controller can tell you that decision: it presents a virtual USB keyboard, which
+        sits below the operating system and is exactly why the console also works in a BIOS that has no layout at all.
+        Neither vendor exposes the remote keyboard layout over Redfish, and the in-band agents report an operating system
+        name and version and nothing more.
+      </p>
+      <p>
+        Firmware, boot menus and installers read positions as US. A running German Windows does not: the position a US
+        board prints <code>-</code> on carries the sharp s there, so an untranslated minus key arrives as <code>&szlig;</code>.
+      </p>
+      <p>
+        The <strong>Remote Layout</strong> menu says which layout the far side applies. <code>en-US</code> is the default
+        and changes nothing. Choosing German inserts one step: each keystroke is resolved to the character the user meant,
+        then encoded the way a German keyboard produces it. Keys that carry no character pass through untouched, which
+        covers the function keys, the arrows and every chord that is about positions rather than letters.
+      </p>
+      <p>
+        The tables behind it were not written by hand. They were read out of the Windows layout DLLs with
+        <code>MapVirtualKeyEx</code> and <code>ToUnicodeEx</code>, every key position in its plain, shifted and AltGr
+        state, for both layouts.
+      </p>
+    </div>
 
     <div class="pitch">
       <h3>Passwords on a console that has no layout</h3>
@@ -322,6 +358,8 @@ footer a { color: var(--ink-dim); }
           <li>State priority is AltGr, then Shift, then plain.</li>
           <li>A key with a <code>plain</code> rule but no <code>shift</code> rule falls back to the plain stroke plus <code>left_shift</code>, so the common case needs one line.</li>
           <li>Ctrl, Alt and GUI combinations bypass language translation entirely. <code>CTRL+C</code> stays <code>CTRL+C</code>, and <code>CTRL+ALT+DEL</code> keeps working under any map.</li>
+          <li>Windows claims the real <code>CTRL+ALT+DEL</code> as its Secure Attention Sequence before any application sees it, so the menu bar carries a button that sends the chord to the remote host on either vendor.</li>
+          <li>Clipboard paste follows the remote layout alone, because which keys produce a character is a property of the far side and not of the keyboard on your desk.</li>
           <li><code>{ "suppress": true }</code> marks a source key with no portable US equivalent, so it is swallowed rather than mistyped.</li>
           <li>A clipboard character that neither the map nor its base defines is counted and reported after the paste instead of being silently dropped.</li>
         </ul>
@@ -350,9 +388,9 @@ footer a { color: var(--ink-dim); }
 
     <div class="shot">
       <figure>
-        <img src="screenshots/launcher.png" alt="The Firstlight launcher window with a list of saved iLO systems on the left and a connection form on the right.">
+        <img src="screenshots/launcher.png" alt="The Firstlight launcher window with a list of saved systems on the left and a connection form on the right.">
         <figcaption>
-          The persistent multi-session launcher: saved iLO systems on the left, the connection form on the right.
+          The persistent multi-session launcher: saved systems on the left, the connection form on the right.
           Host names and account names are documentation placeholders.
         </figcaption>
       </figure>
@@ -367,7 +405,8 @@ footer a { color: var(--ink-dim); }
     <p class="sub">
       <em>Fully tested</em> means verified end to end: console video, keyboard and mouse input, clipboard paste,
       power actions, one-time boot override, ISO virtual media and the MCP bridge. <em>KVM core tested</em> means
-      connecting, video, keyboard and mouse were confirmed on that generation.
+      connecting, video, keyboard and mouse were confirmed on that generation. <em>Untested</em> means nobody has
+      pointed Firstlight at that combination, which is not the same as saying it fails.
     </p>
 
     <div class="tablewrap">
@@ -381,14 +420,28 @@ footer a { color: var(--ink-dim); }
           <tr><td>HPE ProLiant Gen11</td><td>iLO 6</td><td>V2 or newer</td><td class="status">KVM core tested</td></tr>
           <tr><td>HPE ProLiant Gen12</td><td>iLO 7</td><td>V2 or newer</td><td class="status">KVM core tested</td></tr>
           <tr><td>HPE ProLiant Gen8 / Gen9</td><td>iLO 4</td><td>V1 (legacy)</td><td class="status">Expected, not yet confirmed</td></tr>
+          <tr><td>Dell PowerEdge R750</td><td>iDRAC9, firmware 7.10.30.00</td><td>RFB over WebSocket</td><td class="status">Fully tested</td></tr>
+          <tr><td>Dell PowerEdge 15G / 16G</td><td>iDRAC9</td><td>RFB over WebSocket</td><td class="status">Expected, not yet confirmed</td></tr>
+          <tr><td>Dell PowerEdge 14G</td><td>iDRAC9, older firmware</td><td>RFB over WebSocket</td><td class="status">Expected, not yet confirmed</td></tr>
+          <tr><td>Dell PowerEdge 12G / 13G</td><td>iDRAC7 / iDRAC8</td><td>Unknown</td><td class="status">Untested</td></tr>
         </tbody>
       </table>
     </div>
 
     <p style="margin-top:26px">
-      Both protocol generations are implemented, so the remaining combinations are expected to work without changes.
-      If you run Firstlight against a generation or firmware revision that is not listed, a short report of what worked
-      is welcome.
+      Both HPE protocol generations are implemented, so the remaining iLO combinations are expected to work without changes.
+      Every Dell measurement behind the implementation comes from iDRAC9.
+    </p>
+    <p>
+      iDRAC7 and iDRAC8 have never been tried, and the honest answer about them is that nobody here knows. Those generations
+      ship a different console client, but a different client does not have to mean a different protocol underneath, and the
+      reverse holds as well. Trying one is cheap and safe: vendor detection reads the unauthenticated Redfish root before any
+      credentials leave the workstation, and a controller that answers differently, or refuses the console channel, ends up
+      with a failed connection rather than with anything changed on the server.
+    </p>
+    <p>
+      If you run Firstlight against a generation or firmware revision that is not listed, a short report of what worked is
+      welcome, and a report from an older iDRAC would settle a question this project cannot settle on its own.
     </p>
   </div>
 </section>
@@ -400,7 +453,9 @@ footer a { color: var(--ink-dim); }
     <p class="sub">
       A second standalone executable, <code>Firstlight-mcp.exe</code>, exposes the console over the Model Context
       Protocol, so an LLM agent can open a session, watch the framebuffer, type, press chords, move the mouse,
-      control power, set a one-time boot device and mount or unmount ISO media.
+      control power, set a one-time boot device and mount or unmount ISO media. The tools carry an <code>ilo_</code>
+      prefix because the bridge predates Dell support; the names are kept so existing client configurations keep
+      working, and each tool operates on whichever controller the address belongs to.
     </p>
 
     <div class="grid">
@@ -421,7 +476,7 @@ footer a { color: var(--ink-dim); }
     <p style="margin-top:32px">The default stdio transport suits a locally launched server:</p>
 <pre><code>{
   "mcpServers": {
-    "hpe-ilo": {
+    "firstlight": {
       "command": "C:\\Program Files\\Firstlight\\Firstlight-mcp.exe"
     }
   }
@@ -431,7 +486,7 @@ footer a { color: var(--ink-dim); }
       <p>
         <strong>HTTP is restricted to loopback on purpose.</strong> This release implements no HTTP authorization layer,
         and the returned <code>console_handle</code> is a bearer capability: any caller holding it can operate that live
-        console until it is closed or expires. Prefer stdio, and use a dedicated least-privilege iLO account.
+        console until it is closed or expires. Prefer stdio, and use a dedicated least-privilege controller account.
       </p>
     </div>
   </div>
@@ -458,7 +513,7 @@ go build -trimpath -o Firstlight-mcp.exe ./cmd/firstlight-mcp</code></pre>
     <div class="note">
       <p>
         <strong>A password on the command line may be visible to other local processes.</strong> Prefer the interactive
-        launcher on shared systems. Certificate verification is off by default because many iLO installations use
+        launcher on shared systems. Certificate verification is off by default because many controller installations use
         self-signed certificates; turn it on with <code>-verify-cert</code> wherever the certificate is trusted.
       </p>
     </div>
@@ -484,19 +539,23 @@ go build -trimpath -o Firstlight-mcp.exe ./cmd/firstlight-mcp</code></pre>
 
     <p>
       <strong>Firstlight is an independent community open-source project.</strong> It is not affiliated with, sponsored by,
-      endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise. It is not an official HPE product,
-      and HPE does not provide support for it.
+      endorsed by, authorized by, or otherwise connected to Hewlett Packard Enterprise or to Dell Technologies. It is
+      neither an official HPE nor an official Dell product, and neither company provides support for it.
     </p>
     <p>
-      Hewlett Packard Enterprise, HPE, iLO, Integrated Lights-Out, HPLOCONS, associated product names and any related logos
-      or marks are trademarks or registered trademarks of Hewlett Packard Enterprise Company and/or its affiliates.
-      All rights in those marks remain with their respective owners. Their names are used here solely in a descriptive and
-      nominative manner, to identify the systems this software is intended to interoperate with.
+      Hewlett Packard Enterprise, HPE, iLO, Integrated Lights-Out, HPLOCONS, Dell, Dell Technologies, EMC, PowerEdge, iDRAC,
+      Integrated Dell Remote Access Controller, associated product names and any related logos or marks are trademarks or
+      registered trademarks of Hewlett Packard Enterprise Company, of Dell Inc. or its subsidiaries, and of their respective
+      affiliates. All rights in those marks remain with their respective owners. Their names are used here solely in a
+      descriptive and nominative manner, to identify the systems this software is intended to interoperate with.
     </p>
     <p>
       Firstlight is an independently written client. It contains no source code, binaries, resources or artwork originating
-      from HPE or from any HPE client software. The wire formats were determined by analysing observable protocol behaviour
-      for the single purpose of interoperability, which Article 6 of Directive 2009/24/EC and Section 69e UrhG expressly permit.
+      from HPE, from Dell, or from any client software of either company. The wire formats were determined by analysing
+      observable protocol behaviour for the single purpose of interoperability, which Article 6 of Directive 2009/24/EC and
+      Section 69e UrhG expressly permit. On the Dell side the transport is not a vendor invention at all: the firmware speaks
+      the Remote Framebuffer protocol of RFC 6143 over a WebSocket as defined in RFC 6455, and only the vendor-specific
+      framing around it had to be determined by analysis.
     </p>
     <p>
       Every host name, IP address and account name shown in the screenshots on this page is a documentation placeholder,

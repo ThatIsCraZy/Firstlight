@@ -58,7 +58,7 @@ func TestResetInputState(t *testing.T) {
 func TestSendClipboardTextReportOrderAndUnsupportedRunes(t *testing.T) {
 	sender := &recordingKeyboardSender{}
 	sent, skipped, err := sendClipboardTextWithDelay(
-		context.Background(), sender, keyboardmap.BuiltInRegistry(), keyboardLayoutForceGerman, "Aä\r\n", 0,
+		context.Background(), sender, keyboardmap.BuiltInRegistry(), keyboardLayoutForceGerman, keyboardmap.DefaultTarget(), "Aä\r\n", 0,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -88,14 +88,14 @@ func TestSendClipboardTextHonorsCancellationAndSenderErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	sender := &recordingKeyboardSender{}
-	sent, skipped, err := sendClipboardTextWithDelay(ctx, sender, keyboardmap.BuiltInRegistry(), keyboardLayoutDefault, "a", 0)
+	sent, skipped, err := sendClipboardTextWithDelay(ctx, sender, keyboardmap.BuiltInRegistry(), keyboardLayoutDefault, keyboardmap.DefaultTarget(), "a", 0)
 	if !errors.Is(err, context.Canceled) || sent != 0 || skipped != 0 || len(sender.reports) != 1 {
 		t.Fatalf("cancel result sent=%d skipped=%d err=%v reports=%d", sent, skipped, err, len(sender.reports))
 	}
 
 	wantErr := errors.New("send failed")
 	failing := &recordingKeyboardSender{failAt: 2, err: wantErr}
-	sent, skipped, err = sendClipboardTextWithDelay(context.Background(), failing, keyboardmap.BuiltInRegistry(), keyboardLayoutDefault, "a", 0)
+	sent, skipped, err = sendClipboardTextWithDelay(context.Background(), failing, keyboardmap.BuiltInRegistry(), keyboardLayoutDefault, keyboardmap.DefaultTarget(), "a", 0)
 	if !errors.Is(err, wantErr) || sent != 0 || skipped != 0 {
 		t.Fatalf("sender failure sent=%d skipped=%d err=%v", sent, skipped, err)
 	}

@@ -29,19 +29,28 @@ type MenuDef struct {
 	Items []MenuItem
 }
 
+// MenuAction is a push button on the trailing edge of the bar, for a command
+// that is worth one click instead of a trip through a dropdown.
+type MenuAction struct {
+	Text    string
+	Enabled bool
+	Do      func()
+}
+
 // MenuBar is an in-window, macOS-style menu bar with dropdowns.
 type MenuBar struct {
 	open        int // index of the open menu, -1 when closed
 	titleClicks []widget.Clickable
 	itemClicks  []widget.Clickable
 	scrim       widget.Clickable
+	actions     []Button
 	titleXs     []int
 	barHeight   int
 }
 
 func NewMenuBar() *MenuBar { return &MenuBar{open: -1} }
 
-func (m *MenuBar) ensure(menus []MenuDef) {
+func (m *MenuBar) ensure(menus []MenuDef, actions []MenuAction) {
 	for len(m.titleClicks) < len(menus) {
 		m.titleClicks = append(m.titleClicks, widget.Clickable{})
 	}
@@ -55,12 +64,15 @@ func (m *MenuBar) ensure(menus []MenuDef) {
 	for len(m.titleXs) < len(menus) {
 		m.titleXs = append(m.titleXs, 0)
 	}
+	for len(m.actions) < len(actions) {
+		m.actions = append(m.actions, Button{})
+	}
 }
 
 // Layout draws the bar; an open dropdown is drawn deferred so it overlays the
-// rest of the frame.
-func (m *MenuBar) Layout(gtx layout.Context, th *Theme, menus []MenuDef) layout.Dimensions {
-	m.ensure(menus)
+// rest of the frame. Actions are drawn as buttons against the trailing edge.
+func (m *MenuBar) Layout(gtx layout.Context, th *Theme, menus []MenuDef, actions []MenuAction) layout.Dimensions {
+	m.ensure(menus, actions)
 	barHeight := gtx.Dp(32)
 	m.barHeight = barHeight
 	width := gtx.Constraints.Max.X
@@ -116,10 +128,50 @@ func (m *MenuBar) Layout(gtx layout.Context, th *Theme, menus []MenuDef) layout.
 		x += dims.Size.X
 	}
 
+	m.layoutActions(gtx, th, actions, x)
+
 	if m.open >= 0 && m.open < len(menus) {
 		m.layoutDropdown(gtx, th, menus)
 	}
 	return layout.Dimensions{Size: image.Pt(width, barHeight)}
+}
+
+// layoutActions draws the trailing buttons, right-aligned in the bar. Pending
+// clicks are taken before the fit is decided so a button that goes away cannot
+// fire a click later, and the whole group is dropped rather than overlapped
+// when the window is too narrow to hold it beside the menu titles.
+func (m *MenuBar) layoutActions(gtx layout.Context, th *Theme, actions []MenuAction, titlesEnd int) {
+	if len(actions) == 0 {
+		return
+	}
+	gap := gtx.Dp(8)
+	clicked := make([]bool, len(actions))
+	calls := make([]op.CallOp, len(actions))
+	sizes := make([]image.Point, len(actions))
+	total := gap * (len(actions) - 1)
+	for i := range actions {
+		clicked[i] = m.actions[i].Clicked(gtx)
+		macro := op.Record(gtx.Ops)
+		btnGtx := gtx
+		btnGtx.Constraints.Min = image.Point{}
+		dims := m.actions[i].Layout(btnGtx, th, ButtonRegular, actions[i].Enabled, actions[i].Text)
+		calls[i] = macro.Stop()
+		sizes[i] = dims.Size
+		total += dims.Size.X
+	}
+	x := gtx.Constraints.Max.X - gap - total
+	if x < titlesEnd+gap {
+		return
+	}
+	for i := range actions {
+		trans := op.Offset(image.Pt(x, (m.barHeight-sizes[i].Y)/2)).Push(gtx.Ops)
+		calls[i].Add(gtx.Ops)
+		trans.Pop()
+		x += sizes[i].X + gap
+		if clicked[i] && actions[i].Do != nil {
+			actions[i].Do()
+		}
+	}
 }
 
 func (m *MenuBar) layoutDropdown(gtx layout.Context, th *Theme, menus []MenuDef) {

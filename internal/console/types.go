@@ -53,23 +53,26 @@ func (o OpenOptions) validate() (OpenOptions, error) {
 }
 
 type State struct {
-	Handle            string    `json:"handle"`
-	Address           string    `json:"address"`
-	Connected         bool      `json:"connected"`
-	InputReady        bool      `json:"input_ready"`
-	Shared            bool      `json:"shared"`
-	ProtocolVersion   int       `json:"protocol_version"`
-	Width             int       `json:"width"`
-	Height            int       `json:"height"`
-	Revision          uint64    `json:"revision"`
-	FrameRevision     uint64    `json:"frame_revision"`
-	ImageAvailable    bool      `json:"image_available"`
-	Power             string    `json:"power"`
-	POSTCode          string    `json:"post_code"`
-	DisconnectReason  string    `json:"disconnect_reason,omitempty"`
-	OpenedAt          time.Time `json:"opened_at"`
-	LastFrameAt       time.Time `json:"last_frame_at,omitempty"`
-	InsecureTransport bool      `json:"insecure_transport"`
+	Handle           string `json:"handle"`
+	Address          string `json:"address"`
+	Connected        bool   `json:"connected"`
+	InputReady       bool   `json:"input_ready"`
+	Shared           bool   `json:"shared"`
+	ProtocolVersion  int    `json:"protocol_version"`
+	Width            int    `json:"width"`
+	Height           int    `json:"height"`
+	Revision         uint64 `json:"revision"`
+	FrameRevision    uint64 `json:"frame_revision"`
+	ImageAvailable   bool   `json:"image_available"`
+	Power            string `json:"power"`
+	POSTCode         string `json:"post_code"`
+	DisconnectReason string `json:"disconnect_reason,omitempty"`
+	// WaitingForApproval reports a console that connected but stays dark
+	// because another viewer holds it. Only Dell controllers do this.
+	WaitingForApproval bool      `json:"waiting_for_approval,omitempty"`
+	OpenedAt           time.Time `json:"opened_at"`
+	LastFrameAt        time.Time `json:"last_frame_at,omitempty"`
+	InsecureTransport  bool      `json:"insecure_transport"`
 }
 
 type TextResult struct {

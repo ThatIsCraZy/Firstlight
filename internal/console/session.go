@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"firstlight/internal/bmc"
+	"firstlight/internal/idrac"
 	"firstlight/internal/ilo"
 	"firstlight/internal/keyboardmap"
 	"firstlight/internal/kvm"
@@ -58,9 +60,12 @@ type Session struct {
 	virtualMedia      managedVirtualMedia
 	virtualMediaPath  string
 	virtualMediaName  string
-	virtualMediaSize  int64
-	closeOnce         sync.Once
-	done              chan struct{}
+	// remote is set for Dell controllers; the iLO fields above stay nil then.
+	remote           *idrac.Session
+	waitingApproval  bool
+	virtualMediaSize int64
+	closeOnce        sync.Once
+	done             chan struct{}
 }
 
 type operationRecord struct {
@@ -75,6 +80,11 @@ func openSession(rootCtx, connectCtx context.Context, opts OpenOptions, isoRoot 
 	validated, err := opts.validate()
 	if err != nil {
 		return nil, err
+	}
+	// Which controller answers decides everything below, so it is settled
+	// before any credentials go on the wire.
+	if detectVendor(connectCtx, validated) == bmc.VendorDell {
+		return openIDRACSession(rootCtx, connectCtx, validated, isoRoot, logf)
 	}
 	host, _, err := ilo.ParseAddress(validated.Address)
 	if err != nil {
@@ -347,23 +357,24 @@ func (s *Session) State() State {
 
 func (s *Session) stateLocked() State {
 	return State{
-		Handle:            s.handle,
-		Address:           s.address,
-		Connected:         s.connected,
-		InputReady:        s.inputReady,
-		Shared:            s.shared,
-		ProtocolVersion:   s.protocolVersion,
-		Width:             s.width,
-		Height:            s.height,
-		Revision:          s.revision,
-		FrameRevision:     s.frameRevision,
-		ImageAvailable:    s.frameRevision > 0,
-		Power:             s.power,
-		POSTCode:          s.postCode,
-		DisconnectReason:  s.disconnectReason,
-		OpenedAt:          s.openedAt,
-		LastFrameAt:       s.lastFrameAt,
-		InsecureTransport: s.insecureTransport,
+		Handle:             s.handle,
+		Address:            s.address,
+		Connected:          s.connected,
+		InputReady:         s.inputReady,
+		Shared:             s.shared,
+		ProtocolVersion:    s.protocolVersion,
+		Width:              s.width,
+		Height:             s.height,
+		Revision:           s.revision,
+		FrameRevision:      s.frameRevision,
+		ImageAvailable:     s.frameRevision > 0,
+		Power:              s.power,
+		POSTCode:           s.postCode,
+		DisconnectReason:   s.disconnectReason,
+		WaitingForApproval: s.waitingApproval,
+		OpenedAt:           s.openedAt,
+		LastFrameAt:        s.lastFrameAt,
+		InsecureTransport:  s.insecureTransport,
 	}
 }
 
@@ -408,6 +419,9 @@ func (s *Session) Observe(ctx context.Context, afterRevision uint64, wait time.D
 }
 
 func (s *Session) snapshotPNG(available bool) ([]byte, error) {
+	if s.isRemote() {
+		return s.remoteSnapshotPNG(available)
+	}
 	if !available {
 		return nil, nil
 	}
@@ -431,6 +445,18 @@ func (s *Session) signalChangeLocked() {
 }
 
 func (s *Session) markDisconnected(reason string) {
+	if s.isRemote() {
+		s.mu.Lock()
+		if s.connected {
+			s.connected = false
+			s.inputReady = false
+			s.disconnectReason = reason
+			s.signalChangeLocked()
+		}
+		s.mu.Unlock()
+		_ = s.remote.Close()
+		return
+	}
 	s.mu.Lock()
 	if !s.connected {
 		s.mu.Unlock()
@@ -464,6 +490,22 @@ func (s *Session) markDisconnected(reason string) {
 }
 
 func (s *Session) Close() error {
+	if s.isRemote() {
+		var closeErr error
+		s.closeOnce.Do(func() {
+			s.cancel()
+			closeErr = s.remote.Close()
+			s.mu.Lock()
+			s.closed = true
+			s.connected = false
+			s.inputReady = false
+			s.disconnectReason = "closed"
+			s.signalChangeLocked()
+			s.mu.Unlock()
+			close(s.done)
+		})
+		return closeErr
+	}
 	var closeErr error
 	s.closeOnce.Do(func() {
 		s.operationMu.Lock()

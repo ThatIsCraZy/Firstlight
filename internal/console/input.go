@@ -27,6 +27,13 @@ func (s *Session) TypeText(ctx context.Context, text, layout string, delay time.
 	if layout == "" {
 		layout = "us-base"
 	}
+	if s.isRemote() {
+		// The controller maps each character to a scan code itself, so the
+		// local layout files are not consulted on this path.
+		s.operationMu.Lock()
+		defer s.operationMu.Unlock()
+		return s.remoteTypeText(ctx, text, delay)
+	}
 	if _, ok := s.keyboardMaps.Info(layout); !ok {
 		return TextResult{}, fmt.Errorf("unknown keyboard layout %q", layout)
 	}
@@ -91,6 +98,9 @@ func (s *Session) PressKeys(ctx context.Context, names []string, hold time.Durat
 	}
 	s.operationMu.Lock()
 	defer s.operationMu.Unlock()
+	if s.isRemote() {
+		return s.remotePressKeys(ctx, names, hold)
+	}
 	conn, err := s.readyConnection(false)
 	if err != nil {
 		return err
@@ -122,6 +132,9 @@ func (s *Session) Mouse(ctx context.Context, action string, x, y int, button str
 	}
 	s.operationMu.Lock()
 	defer s.operationMu.Unlock()
+	if s.isRemote() {
+		return s.remoteMouse(ctx, action, x, y, button, wheel)
+	}
 	conn, err := s.readyConnection(false)
 	if err != nil {
 		return err
@@ -194,6 +207,11 @@ func (s *Session) Mouse(ctx context.Context, action string, x, y int, button str
 }
 
 func (s *Session) Power(action string) error {
+	if s.isRemote() {
+		s.operationMu.Lock()
+		defer s.operationMu.Unlock()
+		return s.remotePower(action)
+	}
 	var option kvm.PowerOption
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "momentary_press":

@@ -66,7 +66,7 @@ func TestMenuBarOpensDropdownOnTitleClick(t *testing.T) {
 	bar := NewMenuBar()
 	var triggered string
 	h := newHarness(800, 600)
-	layoutBar := func(gtx layout.Context) { bar.Layout(gtx, th, testMenus(&triggered)) }
+	layoutBar := func(gtx layout.Context) { bar.Layout(gtx, th, testMenus(&triggered), nil) }
 
 	// Establish the title positions before clicking one.
 	h.frame(layoutBar)
@@ -90,7 +90,7 @@ func TestMenuBarInvokesEnabledItemOnly(t *testing.T) {
 	bar := NewMenuBar()
 	var triggered string
 	h := newHarness(800, 600)
-	layoutBar := func(gtx layout.Context) { bar.Layout(gtx, th, testMenus(&triggered)) }
+	layoutBar := func(gtx layout.Context) { bar.Layout(gtx, th, testMenus(&triggered), nil) }
 
 	h.frame(layoutBar)
 	h.click(layoutBar, image.Pt(30, 16)) // open "Edit"
@@ -118,5 +118,56 @@ func TestMenuBarInvokesEnabledItemOnly(t *testing.T) {
 	h.click(layoutBar, image.Pt(100, 32+2+5+26+13))
 	if triggered != "" {
 		t.Fatalf("disabled item triggered %q", triggered)
+	}
+}
+
+// The Ctrl+Alt+Del button sits on the trailing edge of the bar, so its hit box
+// is derived from the window width rather than from a fixed position.
+func TestMenuBarActionButtonFires(t *testing.T) {
+	th := NewTheme(true)
+	bar := NewMenuBar()
+	var triggered string
+	fired := 0
+	h := newHarness(800, 600)
+	enabled := true
+	layoutBar := func(gtx layout.Context) {
+		bar.Layout(gtx, th, testMenus(&triggered), []MenuAction{
+			{Text: "Ctrl+Alt+Del", Enabled: enabled, Do: func() { fired++ }},
+		})
+	}
+
+	// One frame to place the button, then click its centre.
+	h.frame(layoutBar)
+	h.click(layoutBar, image.Pt(800-8-40, 16))
+	if fired != 1 {
+		t.Fatalf("the action button fired %d times, want 1", fired)
+	}
+
+	enabled = false
+	h.frame(layoutBar)
+	h.click(layoutBar, image.Pt(800-8-40, 16))
+	if fired != 1 {
+		t.Fatalf("a disabled action button fired, count is %d", fired)
+	}
+}
+
+// A window too narrow to hold the buttons beside the menu titles drops them
+// rather than letting one click reach two targets.
+func TestMenuBarDropsActionsWhenTheBarIsFull(t *testing.T) {
+	th := NewTheme(true)
+	bar := NewMenuBar()
+	var triggered string
+	fired := 0
+	h := newHarness(120, 600)
+	layoutBar := func(gtx layout.Context) {
+		bar.Layout(gtx, th, testMenus(&triggered), []MenuAction{
+			{Text: "Ctrl+Alt+Del", Enabled: true, Do: func() { fired++ }},
+		})
+	}
+
+	h.frame(layoutBar)
+	h.click(layoutBar, image.Pt(112-40, 16))
+	if fired != 0 {
+		t.Fatalf("an action button that does not fit fired %d times", fired)
 	}
 }

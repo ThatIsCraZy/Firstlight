@@ -48,7 +48,9 @@ func newVirtualMediaConnectionData(host, sessionKey string, rc *ilo.RCInfo) virt
 func (s *Session) VirtualMediaStatus() VirtualMediaStatus {
 	s.virtualMediaMu.Lock()
 	defer s.virtualMediaMu.Unlock()
-	s.clearFinishedVirtualMediaLocked()
+	if !s.isRemote() {
+		s.clearFinishedVirtualMediaLocked()
+	}
 	return s.virtualMediaStatusLocked()
 }
 
@@ -69,6 +71,27 @@ func (s *Session) MountISO(ctx context.Context, requestedPath string) (VirtualMe
 			return s.virtualMediaStatusLocked(), nil
 		}
 		return s.virtualMediaStatusLocked(), errors.New("an ISO is already mounted for this console")
+	}
+
+	if s.isRemote() {
+		iso, err := vmedia.OpenISO(path)
+		if err != nil {
+			return s.virtualMediaStatusLocked(), errors.New("requested ISO file cannot be opened")
+		}
+		mountCtx, cancel := context.WithTimeout(ctx, virtualMediaConnectTimeout)
+		stop := context.AfterFunc(s.ctx, cancel)
+		// On success the media session owns the image and closes it later.
+		err = s.remote.MountISO(mountCtx, iso, name)
+		stop()
+		cancel()
+		if err != nil {
+			_ = iso.Close()
+			return s.virtualMediaStatusLocked(), err
+		}
+		s.virtualMediaPath = path
+		s.virtualMediaName = name
+		s.virtualMediaSize = iso.Size()
+		return s.virtualMediaStatusLocked(), nil
 	}
 
 	data, err := s.virtualMediaDataForMount()
@@ -108,6 +131,16 @@ func (s *Session) UnmountISO() (VirtualMediaStatus, error) {
 }
 
 func (s *Session) unmountISO() (VirtualMediaStatus, error) {
+	if s.isRemote() {
+		s.virtualMediaMu.Lock()
+		defer s.virtualMediaMu.Unlock()
+		err := s.remote.UnmountISO()
+		s.clearVirtualMediaLocked()
+		if err != nil {
+			return s.virtualMediaStatusLocked(), errors.New("virtual media could not be unmounted")
+		}
+		return s.virtualMediaStatusLocked(), nil
+	}
 	s.virtualMediaMu.Lock()
 	defer s.virtualMediaMu.Unlock()
 	s.clearFinishedVirtualMediaLocked()
@@ -278,6 +311,17 @@ func (s *Session) clearVirtualMediaLocked() {
 
 func (s *Session) virtualMediaStatusLocked() VirtualMediaStatus {
 	status := VirtualMediaStatus{Enabled: s.isoRoot != nil}
+	if s.isRemote() {
+		mounted, name, size, health := s.remote.MediaStatus()
+		status.Mounted = mounted
+		status.ISOName = name
+		status.SizeBytes = size
+		status.TransportAlive = health.TransportAlive
+		status.DeviceReady = health.DeviceReady
+		status.ReadBytes = health.ReadBytes
+		status.DeliveredBytes = health.DeliveredBytes
+		return status
+	}
 	if s.virtualMedia != nil {
 		status.Mounted = true
 		status.TransportAlive = true

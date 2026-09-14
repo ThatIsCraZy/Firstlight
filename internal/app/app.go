@@ -23,6 +23,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 
+	"firstlight/internal/idrac"
 	"firstlight/internal/ilo"
 	"firstlight/internal/keyboardmap"
 	"firstlight/internal/kvm"
@@ -44,6 +45,10 @@ type Config struct {
 	KeyboardMaps        *keyboardmap.Registry
 	KeyboardMapDir      string
 	KeyboardMapWarnings []string
+	// TargetLayout names the keyboard layout the remote operating system
+	// applies to the key positions this client sends. Empty means en-US,
+	// which is what firmware, boot menus and installers use.
+	TargetLayout string
 }
 
 type SessionWindow struct {
@@ -69,19 +74,23 @@ type appWindow struct {
 	logFile *os.File
 
 	// mu guards connection/session state plus the layout-derived rectangles.
-	mu             sync.Mutex
-	sharePromptMu  sync.Mutex
-	status         string
-	connecting     bool
-	connected      bool
-	captured       bool
-	inputReady     bool
-	closed         bool
-	uiBlocked      bool // an open menu or modal suppresses pointer capture
-	hwnd           uintptr
-	client         *ilo.Client
-	conn           *kvm.Conn
-	cmdConn        *kvm.Conn
+	mu            sync.Mutex
+	sharePromptMu sync.Mutex
+	status        string
+	connecting    bool
+	connected     bool
+	captured      bool
+	inputReady    bool
+	closed        bool
+	uiBlocked     bool // an open menu or modal suppresses pointer capture
+	hwnd          uintptr
+	client        *ilo.Client
+	conn          *kvm.Conn
+	cmdConn       *kvm.Conn
+	// remote is set when a Dell controller answered; the iLO fields above stay
+	// nil then. sender routes input to whichever backend is live.
+	remote         *idrac.Session
+	sender         consoleBackend
 	shareLeader    *kvm.LegacyShareLeader
 	vm             *vmedia.Session
 	host           string
@@ -118,6 +127,7 @@ type appWindow struct {
 	uiFns []func()
 
 	keyboardMaps   *keyboardmap.Registry
+	targetLayout   *keyboardmap.Target
 	keyboardMapDir string
 	ticker         *time.Ticker
 	wndProc        uintptr
@@ -160,6 +170,10 @@ func OpenSession(ctx context.Context, cfg Config, onClosed func()) (*SessionWind
 		pressed:        make(map[Key]bool),
 		keyboardMaps:   cfg.KeyboardMaps,
 		keyboardMapDir: cfg.KeyboardMapDir,
+		targetLayout:   keyboardmap.DefaultTarget(),
+	}
+	if target, ok := keyboardmap.TargetByID(cfg.TargetLayout); ok {
+		w.targetLayout = target
 	}
 	w.logf("app start addr=%q user=%q verify_cert=%v share=%v seize=%v debug=%v iso=%q", cfg.Addr, cfg.User, cfg.VerifyCert, cfg.Share, cfg.Seize, cfg.Debug, cfg.ISOPath)
 
@@ -274,12 +288,20 @@ func (w *appWindow) uploadFrameIfDirty() {
 		return
 	}
 	w.frameDirty = false
-	stream, dst := w.stream, w.frameCopy
+	stream, remote, dst := w.stream, w.remote, w.frameCopy
 	w.mu.Unlock()
 
-	// CopyFrame holds the stream lock for the copy, so a frame never mixes
-	// pixels from two decoder passes.
-	frameCopy := stream.CopyFrame(dst)
+	// Both backends copy under their own lock, so a frame never mixes pixels
+	// from two decoder passes.
+	var frameCopy *image.RGBA
+	switch {
+	case remote != nil:
+		frameCopy = remote.Frame(dst)
+	case stream != nil:
+		frameCopy = stream.CopyFrame(dst)
+	default:
+		return
+	}
 
 	w.mu.Lock()
 	w.frameCopy = frameCopy
@@ -296,7 +318,7 @@ func (w *appWindow) layout(gtx layout.Context) {
 	statusH := gtx.Dp(26)
 
 	w.mu.Lock()
-	status := statusLine(w.status, w.captured, w.vmISOPath, w.vmConnecting, w.keyboardLayoutName(w.keyboardLayout))
+	status := statusLine(w.status, w.captured, w.vmISOPath, w.vmConnecting, w.keyboardLayoutName(w.keyboardLayout), w.targetLayout)
 	serverStatus := serverStatusLine(w.serverPower, w.postCode)
 	w.canvasRect = image.Rect(0, menuH, size.X, size.Y-statusH)
 	w.mu.Unlock()
@@ -321,7 +343,7 @@ func (w *appWindow) layout(gtx layout.Context) {
 	// Menu bar (its dropdown defers on top of everything).
 	menuGtx := gtx
 	menuGtx.Constraints = layout.Exact(size)
-	w.menuBar.Layout(menuGtx, th, w.buildMenus())
+	w.menuBar.Layout(menuGtx, th, w.buildMenus(), w.buildMenuActions())
 
 	w.modal.Layout(gtx, th)
 
@@ -363,12 +385,52 @@ func (w *appWindow) layoutCanvas(gtx layout.Context, size image.Point, offsetY i
 	paint.PaintOp{}.Add(gtx.Ops)
 }
 
-func (w *appWindow) buildMenus() []ui.MenuDef {
+// buildMenuActions returns the buttons on the trailing edge of the menu bar.
+// Ctrl+Alt+Del earns one because Windows swallows the real chord before any
+// application sees it, so there is no keystroke that reaches the remote host.
+func (w *appWindow) buildMenuActions() []ui.MenuAction {
 	w.mu.Lock()
-	mountEnabled := w.connected && !w.sharedSession && w.vm == nil && !w.vmConnecting
-	unmountEnabled := w.connected && w.vm != nil && !w.vmConnecting
+	// A shared session still types, the same rule the clipboard paste follows.
+	enabled := w.connected && w.inputReady
+	w.mu.Unlock()
+	return []ui.MenuAction{
+		{Text: "Ctrl+Alt+Del", Enabled: enabled, Do: w.sendCtrlAltDel},
+	}
+}
+
+// sendCtrlAltDel sends the chord without the pointer being captured, which is
+// the whole point of the button: the click lands on the menu bar, not on the
+// video. Both vendors hold the keys down for a moment, so the send runs off
+// the layout goroutine rather than freezing the frame for a quarter second.
+func (w *appWindow) sendCtrlAltDel() {
+	w.mu.Lock()
+	sender := w.sender
+	ready := w.connected && w.inputReady
+	w.mu.Unlock()
+	if sender == nil || !ready {
+		return
+	}
+	// The chord ends with every key released. Forget the last report so the
+	// next keystroke is transmitted even if it matches what was sent before.
+	w.input.Lock()
+	w.lastKeyReport = [10]byte{}
+	w.input.Unlock()
+	go func() {
+		w.logf("tx ctrl-alt-del (button)")
+		if err := sender.SendCtrlAltDel(); err != nil {
+			w.logf("tx ctrl-alt-del error: %v", err)
+		}
+	}()
+}
+
+func (w *appWindow) buildMenus() []ui.MenuDef {
+	mounted := w.mediaMounted()
+	w.mu.Lock()
+	mountEnabled := w.connected && !w.sharedSession && !mounted && !w.vmConnecting
+	unmountEnabled := w.connected && mounted && !w.vmConnecting
 	pasteEnabled := w.connected && w.inputReady
 	powerEnabled := w.connected && w.inputReady && !w.sharedSession
+	sessionMenuEnabled := w.connected && w.remote != nil
 	layout := w.keyboardLayout
 	w.mu.Unlock()
 
@@ -389,6 +451,20 @@ func (w *appWindow) buildMenus() []ui.MenuDef {
 		ui.MenuItem{Text: "Export built-in German map...", Enabled: true, Do: func() { go w.exportBuiltInGermanMap() }},
 	)
 
+	w.mu.Lock()
+	currentTarget := w.targetLayout
+	w.mu.Unlock()
+	var targetItems []ui.MenuItem
+	for _, entry := range keyboardmap.Targets() {
+		target := entry
+		targetItems = append(targetItems, ui.MenuItem{
+			Text:    target.DisplayName,
+			Checked: currentTarget == target,
+			Enabled: true,
+			Do:      func() { w.setTargetLayout(target) },
+		})
+	}
+
 	return []ui.MenuDef{
 		{Title: "Edit", Items: []ui.MenuItem{
 			{Text: "Paste Clipboard", Enabled: pasteEnabled, Do: w.pasteClipboard},
@@ -403,7 +479,13 @@ func (w *appWindow) buildMenus() []ui.MenuDef {
 			{Text: "Cold Boot", Enabled: powerEnabled, Do: func() { w.confirmAndSendPower(kvm.PowerColdBoot, "Cold Boot") }},
 			{Text: "Reset", Enabled: powerEnabled, Do: func() { w.confirmAndSendPower(kvm.PowerReset, "Reset") }},
 		}},
+		{Title: "Session", Items: []ui.MenuItem{
+			{Text: "Show Other Sessions", Enabled: sessionMenuEnabled, Do: w.listOtherSessions},
+			{Separator: true},
+			{Text: "Take Over Console...", Enabled: sessionMenuEnabled, Do: w.confirmTakeOverConsole},
+		}},
 		{Title: "Keyboard Layout", Items: keyboardItems},
+		{Title: "Remote Layout", Items: targetItems},
 	}
 }
 
@@ -485,13 +567,40 @@ func (w *appWindow) setKeyboardLayout(layout keyboardLayout) {
 		w.invalidate()
 		return
 	}
-	conn := w.conn
+	sender := w.sender
 	w.keyboardLayout = layout
 	w.mu.Unlock()
 	w.resetKeyboardState()
 	w.logf("keyboard layout changed layout=%s", layout)
-	if conn != nil {
-		_ = conn.SendAllKeysUp()
+	if sender != nil {
+		_ = sender.SendAllKeysUp()
+	}
+	w.invalidate()
+}
+
+// setTargetLayout changes the layout the remote operating system is assumed to
+// run. Everything in flight is released first, because the same physical key
+// lands on a different position after the switch.
+func (w *appWindow) setTargetLayout(target *keyboardmap.Target) {
+	if target == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.targetLayout == target {
+		w.mu.Unlock()
+		w.invalidate()
+		return
+	}
+	sender := w.sender
+	w.targetLayout = target
+	w.mu.Unlock()
+	w.resetKeyboardState()
+	w.logf("remote layout changed target=%s", target.ID)
+	if sender != nil {
+		_ = sender.SendAllKeysUp()
+	}
+	if !target.IsDefault() {
+		w.setStatus("Remote layout: " + target.DisplayName + ".")
 	}
 	w.invalidate()
 }
@@ -504,9 +613,10 @@ func (w *appWindow) setStatus(status string) {
 }
 
 func (w *appWindow) chooseAndMountISO() {
+	attached := w.mediaMounted()
 	w.mu.Lock()
 	connected := w.connected
-	mounted := w.vm != nil || w.vmConnecting
+	mounted := attached || w.vmConnecting
 	current := w.vmISOPath
 	w.mu.Unlock()
 	if !connected {
@@ -575,6 +685,10 @@ func fileExists(path string) bool {
 }
 
 func (w *appWindow) mountISO(path string) {
+	if w.isRemote() {
+		w.mountISORemote(path)
+		return
+	}
 	w.mu.Lock()
 	if w.vm != nil || w.vmConnecting {
 		w.mu.Unlock()
@@ -626,6 +740,10 @@ func (w *appWindow) mountISO(path string) {
 }
 
 func (w *appWindow) dismountISO() {
+	if w.isRemote() {
+		w.dismountISORemote()
+		return
+	}
 	w.mu.Lock()
 	if w.vmConnecting {
 		w.mu.Unlock()
@@ -657,19 +775,20 @@ func (w *appWindow) pasteClipboard() {
 		return
 	}
 	w.mu.Lock()
-	conn := w.conn
+	sender := w.sender
 	ready := w.connected && w.inputReady
 	layout := w.keyboardLayout
+	target := w.targetLayout
 	w.mu.Unlock()
 	w.resetKeyboardState()
-	if conn == nil || !ready {
+	if sender == nil || !ready {
 		w.setStatus("Connect before pasting clipboard.")
 		return
 	}
 	w.logf("clipboard paste start runes=%d layout=%s", len([]rune(text)), layout)
 	w.setStatus("Pasting clipboard...")
 	go func() {
-		sent, skipped, err := sendClipboardText(w.ctx, conn, w.keyboardMaps, layout, text)
+		sent, skipped, err := sendClipboardText(w.ctx, sender, w.keyboardMaps, layout, target, text)
 		if err != nil {
 			w.logf("clipboard paste failed sent=%d skipped=%d: %v", sent, skipped, err)
 			w.setStatus(fmt.Sprintf("Clipboard paste failed: %v", err))
@@ -699,15 +818,15 @@ func (w *appWindow) confirmAndSendPower(option kvm.PowerOption, label string) {
 
 func (w *appWindow) sendPower(option kvm.PowerOption, label string) {
 	w.mu.Lock()
-	conn := w.conn
+	sender := w.sender
 	ready := w.connected && w.inputReady
 	w.mu.Unlock()
-	if conn == nil || !ready {
+	if sender == nil || !ready {
 		w.setStatus("Connect before sending power commands.")
 		return
 	}
 	w.logf("tx power option=%d label=%q", option, label)
-	if err := conn.SendPower(option); err != nil {
+	if err := sender.SendPower(option); err != nil {
 		w.logf("tx power error option=%d label=%q: %v", option, label, err)
 		w.setStatus(fmt.Sprintf("Power command failed: %v", err))
 		return
@@ -784,7 +903,7 @@ func (w *appWindow) mouseEvent(x, y int, buttons byte, wheel int8) {
 
 func (w *appWindow) sendMouse(x, y int, wheel int8) {
 	w.mu.Lock()
-	conn := w.conn
+	sender := w.sender
 	ready := w.inputReady && w.captured
 	rect := w.videoRect
 	w.mu.Unlock()
@@ -793,7 +912,7 @@ func (w *appWindow) sendMouse(x, y int, wheel int8) {
 	buttons := w.mouseButtons
 	w.lastMouseX, w.lastMouseY = x, y
 	w.input.Unlock()
-	if conn == nil || !ready || rect.Dx() <= 0 || rect.Dy() <= 0 {
+	if sender == nil || !ready || rect.Dx() <= 0 || rect.Dy() <= 0 {
 		return
 	}
 	vx, vy := x-rect.Min.X, y-rect.Min.Y
@@ -802,7 +921,7 @@ func (w *appWindow) sendMouse(x, y int, wheel int8) {
 		return
 	}
 	relX, relY := x-lastX, y-lastY
-	if err := conn.SendMouse(vx, vy, relX, relY, rect.Dx(), rect.Dy(), wheel, buttons); err != nil {
+	if err := sender.SendMouse(vx, vy, relX, relY, rect.Dx(), rect.Dy(), wheel, buttons); err != nil {
 		w.logf("tx mouse error: %v", err)
 	}
 }
@@ -834,7 +953,7 @@ func (w *appWindow) updatePointerCapture() {
 	w.mu.Lock()
 	ready := w.connected && w.inputReady && !w.uiBlocked
 	captured := w.captured
-	conn := w.conn
+	sender := w.sender
 	shouldCapture := ready && inside
 	changed := false
 	enter := false
@@ -858,15 +977,15 @@ func (w *appWindow) updatePointerCapture() {
 		w.rawPressed = [256]bool{}
 		w.input.Unlock()
 		w.logf("capture enter pointer x=%d y=%d", x, y)
-		if conn != nil {
-			_ = conn.SendAllKeysUp()
+		if sender != nil {
+			_ = sender.SendAllKeysUp()
 		}
 	}
 	if leave {
 		w.resetCapturedInput()
 		w.logf("capture leave pointer")
-		if conn != nil {
-			_ = conn.SendAllKeysUp()
+		if sender != nil {
+			_ = sender.SendAllKeysUp()
 		}
 	}
 	if changed {
@@ -887,13 +1006,13 @@ func (w *appWindow) setCapture(v bool) {
 
 func (w *appWindow) releaseCapture() {
 	w.mu.Lock()
-	conn := w.conn
+	sender := w.sender
 	wasCaptured := w.captured
 	w.captured = false
 	w.mu.Unlock()
 	w.resetCapturedInput()
-	if conn != nil && wasCaptured {
-		_ = conn.SendAllKeysUp()
+	if sender != nil && wasCaptured {
+		_ = sender.SendAllKeysUp()
 	}
 	w.invalidate()
 }
@@ -907,7 +1026,9 @@ func (w *appWindow) shutdown() {
 	w.closed = true
 	w.logf("shutdown requested")
 	conn, cmdConn, shareLeader, vm, client := w.conn, w.cmdConn, w.shareLeader, w.vm, w.client
+	remote := w.remote
 	w.conn, w.cmdConn, w.shareLeader, w.vm, w.client = nil, nil, nil, nil, nil
+	w.remote, w.sender = nil, nil
 	w.connected, w.captured, w.inputReady = false, false, false
 	w.sharedSession = false
 	w.mu.Unlock()
@@ -928,6 +1049,11 @@ func (w *appWindow) shutdown() {
 	if cmdConn != nil {
 		_ = cmdConn.Close()
 	}
+	if remote != nil {
+		// Closing the Dell session unmaps any image, tells the firmware the
+		// viewer is leaving and ends the web login.
+		_ = remote.Close()
+	}
 	if client != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -939,7 +1065,7 @@ func (w *appWindow) shutdown() {
 	}
 }
 
-func statusLine(status string, captured bool, vmISO string, vmConnecting bool, layoutName string) string {
+func statusLine(status string, captured bool, vmISO string, vmConnecting bool, layoutName string, target *keyboardmap.Target) string {
 	if vmConnecting {
 		status += " | VM: mounting..."
 	} else if vmISO != "" {
@@ -948,6 +1074,9 @@ func statusLine(status string, captured bool, vmISO string, vmConnecting bool, l
 		status += " | VM: none"
 	}
 	status += " | Keyboard: " + layoutName
+	if target != nil && !target.IsDefault() {
+		status += " to " + target.ID
+	}
 	if captured {
 		return status + " [mouse inside]"
 	}

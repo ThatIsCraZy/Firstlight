@@ -46,8 +46,8 @@ func run(arguments []string) error {
 	flags.StringVar(&opts.listen, "listen", "127.0.0.1:8765", "HTTP listen address (loopback only)")
 	flags.StringVar(&opts.endpoint, "endpoint", "/mcp", "HTTP MCP endpoint")
 	flags.StringVar(&opts.isoRoot, "iso-root", "", "directory containing ISO files allowed for virtual media; empty disables ISO mounting")
-	flags.DurationVar(&opts.sessionTTL, "session-ttl", console.DefaultSessionTTL, "idle lifetime of an open iLO console handle")
-	flags.DurationVar(&opts.connectTimeout, "connect-timeout", console.DefaultConnectTimeout, "timeout for iLO login and KVM setup")
+	flags.DurationVar(&opts.sessionTTL, "session-ttl", console.DefaultSessionTTL, "idle lifetime of an open console handle")
+	flags.DurationVar(&opts.connectTimeout, "connect-timeout", console.DefaultConnectTimeout, "timeout for controller login and console setup")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
