@@ -522,16 +522,22 @@ to HPE or to any other third party.
 ## How the protocol was determined
 
 Firstlight is an independently written client. It contains no source code, no
-binaries, no resources and no artwork originating from HPE or from any HPE client
-software, and this repository deliberately ships none of that material.
+binaries, no resources and no artwork originating from HPE, from Dell, or from any
+client software of either vendor, and this repository deliberately ships none of
+that material.
 
 Public HPE documentation names the TCP services used by the Integrated Remote
-Console but does not define their application-layer wire formats. Dell publishes
-no specification for the ticketing, key exchange and control messages that sit
-around the console it serves. Those formats were therefore determined by
-analysing the observable behaviour of each protocol, principally the traffic on
-the wire, for the single purpose of making an independent client interoperate
-with these management processors. The results are documented in
+Console but does not define their application-layer wire formats. On the Dell
+side the console transport needed no analysis at all: it is the Remote Framebuffer
+protocol of [RFC 6143](https://www.rfc-editor.org/rfc/rfc6143.html) carried over a
+WebSocket of [RFC 6455](https://www.rfc-editor.org/rfc/rfc6455.html), both
+published standards, and both are implemented here from those documents. What Dell
+does not specify is the framing around that transport, the ticketing, the in-band
+key exchange, the control messages and the virtual-media channel. Those formats,
+on both vendors, were therefore determined by analysing the observable behaviour
+of each protocol, principally the traffic on the wire, for the single purpose of
+making an independent client interoperate with these management processors. The
+results are documented in
 [`ILO-Wireprotokol.md`](ILO-Wireprotokol.md) and
 [`IDRAC-Wireprotokol.md`](IDRAC-Wireprotokol.md), which label every material
 claim as *Verified*, *Observed* or *Inferred* rather than presenting guesses as
