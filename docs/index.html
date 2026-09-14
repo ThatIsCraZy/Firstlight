@@ -143,7 +143,8 @@ td.status { white-space: nowrap; color: var(--ink-dim); }
   border-left: 3px solid var(--accent); background: var(--bg-raised);
   border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 28px 0 0; max-width: var(--measure);
 }
-.note p { margin: 0; font-size: 14.8px; color: var(--ink-dim); }
+.note p { margin: 0 0 0.8em; font-size: 14.8px; color: var(--ink-dim); }
+.note p:last-child { margin-bottom: 0; }
 .note strong { color: var(--ink); }
 
 .pitch {
@@ -245,6 +246,22 @@ footer a { color: var(--ink-dim); }
         <h3>Native, not a web view</h3>
         <p>A GPU-rendered interface built on Gio and drawn through Direct3D&nbsp;11. No Electron, no bundled browser engine. Light and dark themes follow the Windows setting and switch live.</p>
       </div>
+    </div>
+
+    <div class="note" style="margin-top:34px">
+      <p>
+        <strong>As far as we can tell after a short search, this is the first open-source desktop client that speaks the
+        Dell iDRAC9 Virtual Console protocol itself</strong>, and the only one that reaches iLO and iDRAC from one
+        application. What is published for iDRAC9 is Redfish management, an embedded copy of the vendor's own HTML5
+        console, or a launcher for the Java viewer of the older generations; the protocol work that exists targets
+        iDRAC6 and the Avocent JViewer family, which is a different protocol from a different supplier.
+      </p>
+      <p>
+        That does not mean nobody could see an iDRAC screen from a native window before. An iDRAC9 with an Enterprise
+        licence also runs a separate VNC server, disabled in the factory configuration and on its own port behind its
+        own password, which any VNC client has reached for years. It carries video, keyboard and mouse and nothing
+        else. This is what a short search found rather than a proof, and a pointer to prior art we missed is welcome.
+      </p>
     </div>
   </div>
 </section>

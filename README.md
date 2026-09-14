@@ -11,6 +11,8 @@ It gives you full keyboard/video/mouse access to a server from power-on through 
 
 You never pick a vendor. Type the address, and Firstlight asks the controller what it is before any credentials go on the wire. See [Tested hardware](#tested-hardware).
 
+As far as we can tell, Firstlight is the first open-source desktop client that speaks the Dell iDRAC9 Virtual Console protocol itself. See [Prior art](#prior-art) for what that rests on and what it leaves out.
+
 The references to HPE, iLO, Dell and iDRAC exist only to explain which systems this software interoperates with.
 
 Project site: **[thatiscrazy.github.io/Firstlight](https://thatiscrazy.github.io/Firstlight/)**
@@ -26,6 +28,16 @@ A live remote console on an HPE ProLiant DL345 Gen11: the server's own video in 
 The persistent multi-session launcher: saved systems on the left, the connection form on the right, drawn by the native Gio interface in the dark theme.
 
 Host names, addresses and account names in both screenshots were replaced with documentation placeholders after capture. Nothing else in either image was altered.
+
+## Prior art
+
+As far as we can tell after a short search, Firstlight is the first open-source desktop client that speaks the Dell iDRAC9 Virtual Console protocol itself, and the only one that reaches HPE iLO and Dell iDRAC from one application.
+
+What is published for iDRAC9 is Redfish management, an embedded copy of the vendor's own HTML5 console, or a launcher for the Java viewer of the older generations. Protocol work does exist, but it targets iDRAC6 and the Avocent JViewer family, which is a different protocol from a different supplier. A code search across public repositories finds none of the console endpoints this client uses, while the same search turns up the iDRAC6 projects at once.
+
+That claim does not say nobody could see an iDRAC screen from a native window before. An iDRAC9 with an Enterprise licence also runs a separate VNC server, disabled in the factory configuration and sitting on its own port behind its own password. Any VNC client has reached that for years. It carries video, keyboard and mouse and nothing else: no virtual media, no power control, no boot override, no session handling, and it is not the Virtual Console the web interface uses.
+
+This is what a short search found, not a proof. Public code search covers indexed default branches and nothing outside those; a pointer to prior art we missed is welcome.
 
 ## Goals
 
