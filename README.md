@@ -246,7 +246,7 @@ The MCP bridge uses the same translation layer: `ilo_console_type_text` types th
 | HPE ProLiant Gen11 | iLO 6 | V2 or newer | KVM core tested |
 | HPE ProLiant Gen12 | iLO 7 | V2 or newer | KVM core tested |
 | HPE ProLiant Gen8 / Gen9 | iLO 4 | V1 (legacy) | Expected to work; not yet confirmed |
-| Dell PowerEdge R750 | iDRAC9, firmware 7.10.30.00 | RFB over WebSocket | Fully tested |
+| Dell PowerEdge R750 | iDRAC9, firmware 7.10.30.00 and 7.30.30.51 | RFB over WebSocket | Fully tested |
 | Dell PowerEdge 15G / 16G | iDRAC9 | RFB over WebSocket | Expected to work; not yet confirmed |
 | Dell PowerEdge 14G | iDRAC9, older firmware | RFB over WebSocket | Expected to work; not yet confirmed |
 | Dell PowerEdge 12G / 13G | iDRAC7 / iDRAC8 | Unknown | Untested |
@@ -258,6 +258,8 @@ The MCP bridge uses the same translation layer: `ilo_console_type_text` types th
 *Untested* means nobody has pointed Firstlight at that combination. It is not a statement that it fails.
 
 Both HPE remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes: iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path.
+
+Firmware 7.30 changed how the iDRAC web session accepts credentials. It stopped reading the two custom headers the older firmware wanted and now expects ordinary HTTP basic authentication, answering `400 Bad Request` with `authResult 99` otherwise. Firstlight sends both forms on every login, so one build works either side of that change. The measurement is in [IDRAC-Wireprotokol.md](IDRAC-Wireprotokol.md).
 
 On the Dell side, every measurement behind the implementation comes from iDRAC9. iDRAC7 and iDRAC8 have never been tried, and the honest answer about them is that nobody here knows. Those generations ship a different console client, but a different client does not necessarily mean a different protocol underneath, and the reverse holds as well. Trying one is cheap and safe: vendor detection reads the unauthenticated Redfish root before any credentials leave the workstation, and a controller that answers differently, or that refuses the console channel, ends up with a failed connection rather than with anything changed on the server. A report either way would be genuinely useful.
 

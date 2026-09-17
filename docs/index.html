@@ -437,7 +437,7 @@ footer a { color: var(--ink-dim); }
           <tr><td>HPE ProLiant Gen11</td><td>iLO 6</td><td>V2 or newer</td><td class="status">KVM core tested</td></tr>
           <tr><td>HPE ProLiant Gen12</td><td>iLO 7</td><td>V2 or newer</td><td class="status">KVM core tested</td></tr>
           <tr><td>HPE ProLiant Gen8 / Gen9</td><td>iLO 4</td><td>V1 (legacy)</td><td class="status">Expected, not yet confirmed</td></tr>
-          <tr><td>Dell PowerEdge R750</td><td>iDRAC9, firmware 7.10.30.00</td><td>RFB over WebSocket</td><td class="status">Fully tested</td></tr>
+          <tr><td>Dell PowerEdge R750</td><td>iDRAC9, firmware 7.10.30.00 and 7.30.30.51</td><td>RFB over WebSocket</td><td class="status">Fully tested</td></tr>
           <tr><td>Dell PowerEdge 15G / 16G</td><td>iDRAC9</td><td>RFB over WebSocket</td><td class="status">Expected, not yet confirmed</td></tr>
           <tr><td>Dell PowerEdge 14G</td><td>iDRAC9, older firmware</td><td>RFB over WebSocket</td><td class="status">Expected, not yet confirmed</td></tr>
           <tr><td>Dell PowerEdge 12G / 13G</td><td>iDRAC7 / iDRAC8</td><td>Unknown</td><td class="status">Untested</td></tr>
@@ -448,6 +448,12 @@ footer a { color: var(--ink-dim); }
     <p style="margin-top:26px">
       Both HPE protocol generations are implemented, so the remaining iLO combinations are expected to work without changes.
       Every Dell measurement behind the implementation comes from iDRAC9.
+    </p>
+    <p>
+      iDRAC firmware 7.30 changed how the web session accepts credentials. It stopped reading the two custom headers the
+      older firmware wanted and now expects ordinary HTTP basic authentication, answering <code>400 Bad Request</code> with
+      <code>authResult 99</code> otherwise. Firstlight sends both forms on every login, so one build works either side of
+      that change.
     </p>
     <p>
       iDRAC7 and iDRAC8 have never been tried, and the honest answer about them is that nobody here knows. Those generations

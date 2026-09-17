@@ -105,11 +105,21 @@ Neither request carries credentials.
 
 ```
 POST /sysmgmt/2015/bmc/session
+Authorization: Basic <base64 of username:password>
 user: "<username>"
 password: "<password>"
 ```
 
-**Verified.** The credentials travel in two request headers, each enclosed in double quotes; the body is empty. A successful login answers `201 Created` with:
+**Verified.** The body is empty. Which of these credential forms the controller reads depends on the firmware, so a client **SHOULD** send both:
+
+| Firmware | `user` and `password` headers | `Authorization: Basic` |
+|---|---|---|
+| before 7.30 | accepted | ignored |
+| 7.30.30.51 | ignored | accepted |
+
+Measured on a PowerEdge R750 with iDRAC9 7.30.30.51: the header form alone answers `400 Bad Request` with `{"authResult": 99, "blockingTime": 0}`, basic authentication alone answers `201 Created`, and both together answer `201 Created`. Nothing else in this document changed with that firmware; the ticket, the console channel and the media channel behave as described below.
+
+A successful login answers `201 Created` with:
 
 - a body of `{"authResult": 0}`,
 - an `XSRF-TOKEN` response header holding a 32-character hexadecimal token,
@@ -117,7 +127,7 @@ password: "<password>"
 
 A client **MUST** send both the cookie and the `XSRF-TOKEN` header on every later request, and on both WebSocket upgrades. Redfish paths accept the same token in an `X-AUTH-TOKEN` header.
 
-A non-zero `authResult` indicates a rejected login even when the status code is 2xx, so a client **MUST** check it.
+A non-zero `authResult` indicates a rejected login even when the status code is 2xx, so a client **MUST** check it. A rejected login is reported as `400 Bad Request` rather than `401 Unauthorized`, and the body carries the controller's own verdict: `authResult` names the reason and `blockingTime` counts the seconds the firmware will refuse further attempts after too many failures. A client **SHOULD** report both rather than the status code alone, and **MUST NOT** retry a rejected login in a loop, because repeated failures are what starts the blocking period.
 
 ### 5.2 Logout
 

@@ -117,21 +117,24 @@ func (c *Client) Login(ctx context.Context, user, password string) error {
 	if err != nil {
 		return err
 	}
-	// The firmware expects the credentials quoted inside the header value.
+	// Older firmware reads the credentials from these two headers, quoted
+	// inside the value. Firmware 7.30 stopped looking at them and answers
+	// HTTP 400 with authResult 99 unless the request carries ordinary HTTP
+	// basic authentication, which it has always accepted on Redfish. Both go
+	// on every request, so one login works across firmware generations.
 	req.Header.Set("user", strconv.Quote(user))
 	req.Header.Set("password", strconv.Quote(password))
+	req.SetBasicAuth(user, password)
 	resp, body, err := c.do(req)
 	if err != nil {
 		return err
 	}
+	auth := parseAuthResult(body)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("iDRAC login failed: HTTP %d %s", resp.StatusCode, summary(body))
+		return fmt.Errorf("iDRAC login failed: HTTP %d%s", resp.StatusCode, auth.describe(body))
 	}
-	var result struct {
-		AuthResult int `json:"authResult"`
-	}
-	if err := json.Unmarshal(body, &result); err == nil && result.AuthResult != 0 {
-		return fmt.Errorf("iDRAC login rejected, authResult %d", result.AuthResult)
+	if auth.AuthResult != 0 {
+		return fmt.Errorf("iDRAC login rejected, authResult %d%s", auth.AuthResult, auth.blocking())
 	}
 	token := resp.Header.Get("XSRF-TOKEN")
 	if token == "" {
@@ -350,6 +353,39 @@ func (c *Client) sendJSON(ctx context.Context, method, path string, in any) erro
 }
 
 // summary shortens a response body for an error message.
+// authAnswer is what the session endpoint reports about a login attempt.
+// blockingTime counts the seconds the firmware refuses further attempts after
+// it has seen too many failures.
+type authAnswer struct {
+	AuthResult   int `json:"authResult"`
+	BlockingTime int `json:"blockingTime"`
+	parsed       bool
+}
+
+func parseAuthResult(body []byte) authAnswer {
+	var answer authAnswer
+	if err := json.Unmarshal(body, &answer); err != nil {
+		return authAnswer{}
+	}
+	answer.parsed = true
+	return answer
+}
+
+func (a authAnswer) blocking() string {
+	if a.BlockingTime <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(", blocked for %d seconds after repeated failures", a.BlockingTime)
+}
+
+// describe prefers the firmware's own verdict and falls back to the raw body.
+func (a authAnswer) describe(body []byte) string {
+	if !a.parsed {
+		return " " + summary(body)
+	}
+	return fmt.Sprintf(", authResult %d%s", a.AuthResult, a.blocking())
+}
+
 func summary(body []byte) string {
 	text := strings.TrimSpace(string(body))
 	if len(text) > 200 {
