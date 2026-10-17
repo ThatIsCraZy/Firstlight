@@ -322,6 +322,8 @@ Power operations:
 
 **Verified.** A client **MUST** send the window-close message before it closes the socket. Without it the controller keeps the console slot registered, and with only six slots and no timeout, a handful of clients that exited badly will block the console entirely.
 
+**Observed on firmware 7.30.30.54.** Sending the window-close message and immediately tearing down TCP after a WebSocket Close frame can still leave a console slot occupied. Complete the WebSocket closing handshake as specified in [RFC 6455, section 5.5.1](https://www.rfc-editor.org/rfc/rfc6455#section-5.5.1): stop sending data frames and allow the peer to acknowledge Close before releasing the transport, with a bounded timeout for an unresponsive peer. Repeated live close/reconnect tests released their slots after this change.
+
 ### 8.2 Client list and key refresh
 
 Subtype `172` carries the session identity and a refreshed key. After the two header octets:

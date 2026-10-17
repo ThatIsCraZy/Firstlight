@@ -16,7 +16,7 @@ import (
 	"firstlight/internal/console"
 )
 
-const Version = "1.2.0"
+const Version = "1.4.3"
 
 type Bridge struct {
 	manager *console.Manager

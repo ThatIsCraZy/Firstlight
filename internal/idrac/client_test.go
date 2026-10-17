@@ -109,16 +109,18 @@ func TestBootTarget(t *testing.T) {
 func TestPowerMappingCoversEveryAction(t *testing.T) {
 	cases := []struct {
 		action    PowerAction
+		powerOn   bool
 		operation byte
 		reset     ResetAction
 	}{
-		{PowerMomentaryPress, PowerGracefulShutdown, ResetGracefulShutdown},
-		{PowerPressAndHold, PowerOff, ResetForceOff},
-		{PowerColdBootAction, PowerColdBoot, ResetPowerCycle},
-		{PowerResetAction, PowerWarmBoot, ResetForceRestart},
+		{PowerMomentaryPress, false, PowerOn, ResetOn},
+		{PowerMomentaryPress, true, PowerGracefulShutdown, ResetGracefulShutdown},
+		{PowerPressAndHold, true, PowerOff, ResetForceOff},
+		{PowerColdBootAction, true, PowerColdBoot, ResetPowerCycle},
+		{PowerResetAction, true, PowerWarmBoot, ResetForceRestart},
 	}
 	for _, tc := range cases {
-		operation, reset, err := powerMapping(tc.action)
+		operation, reset, err := powerMapping(tc.action, tc.powerOn)
 		if err != nil {
 			t.Fatalf("powerMapping(%q): %v", tc.action, err)
 		}
@@ -127,7 +129,7 @@ func TestPowerMappingCoversEveryAction(t *testing.T) {
 				tc.action, operation, reset, tc.operation, tc.reset)
 		}
 	}
-	if _, _, err := powerMapping("explode"); err == nil {
+	if _, _, err := powerMapping("explode", true); err == nil {
 		t.Fatal("expected an error for an unknown action")
 	}
 }

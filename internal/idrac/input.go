@@ -214,7 +214,29 @@ func (s *Session) Power(ctx context.Context, action PowerAction) error {
 	if err := s.ready(); err != nil {
 		return err
 	}
-	operation, reset, err := powerMapping(action)
+	action = PowerAction(strings.ToLower(strings.TrimSpace(string(action))))
+	var powerOn bool
+	if action == PowerMomentaryPress {
+		// Dell has separate on and shutdown commands, not a physical-button
+		// toggle. Use the current console state to preserve button semantics.
+		state := s.State()
+		powerOn = state.PowerOn
+		if !state.PowerKnown {
+			status, err := s.client.GetManagementStatus(ctx)
+			if err != nil {
+				return fmt.Errorf("read power state for momentary press: %w", err)
+			}
+			switch status.PowerState {
+			case "on":
+				powerOn = true
+			case "off":
+				powerOn = false
+			default:
+				return fmt.Errorf("cannot send momentary press with power state %q", status.PowerState)
+			}
+		}
+	}
+	operation, reset, err := powerMapping(action, powerOn)
 	if err != nil {
 		return err
 	}
@@ -225,9 +247,12 @@ func (s *Session) Power(ctx context.Context, action PowerAction) error {
 	return nil
 }
 
-func powerMapping(action PowerAction) (byte, ResetAction, error) {
+func powerMapping(action PowerAction, powerOn bool) (byte, ResetAction, error) {
 	switch PowerAction(strings.ToLower(strings.TrimSpace(string(action)))) {
 	case PowerMomentaryPress:
+		if !powerOn {
+			return PowerOn, ResetOn, nil
+		}
 		return PowerGracefulShutdown, ResetGracefulShutdown, nil
 	case PowerPressAndHold:
 		return PowerOff, ResetForceOff, nil
@@ -240,8 +265,8 @@ func powerMapping(action PowerAction) (byte, ResetAction, error) {
 	}
 }
 
-// PowerOn turns a powered-off host on. The console channel offers it as its
-// own operation because a momentary press does nothing on a running machine.
+// PowerOn unconditionally requests power-on, without the state-dependent
+// shutdown behavior of PowerMomentaryPress.
 func (s *Session) PowerOn(ctx context.Context) error {
 	if err := s.ready(); err != nil {
 		return err

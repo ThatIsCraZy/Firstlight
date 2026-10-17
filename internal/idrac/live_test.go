@@ -347,10 +347,17 @@ func TestLiveConsoleEncodingTrace(t *testing.T) {
 	mu.Unlock()
 	t.Logf("after the first update: %s", firstPass)
 
-	// Nudge the pointer so the firmware has something to send incrementally.
+	// Move to distinct positions and wait for each resulting update. An idle
+	// screen need not emit four frames after one move, especially when an
+	// earlier test already left the pointer at the same destination.
 	state := session.State()
-	_ = session.SendMouse(state.Width/2, state.Height/2, 0, 0, state.Width, state.Height, 0, 0)
-	waitFor(4, 45*time.Second)
+	for _, x := range []int{state.Width / 4, 3 * state.Width / 4, state.Width / 2} {
+		revision := session.Screen().Revision()
+		if err := session.SendMouse(x, state.Height/2, 0, 0, state.Width, state.Height, 0, 0); err != nil {
+			t.Fatalf("move pointer for incremental update: %v", err)
+		}
+		waitFor(revision+1, 15*time.Second)
+	}
 	save("console-later.png")
 	mu.Lock()
 	for name, count := range seen {

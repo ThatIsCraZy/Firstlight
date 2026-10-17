@@ -81,7 +81,7 @@ This is what a short search found, not a proof. Public code search covers indexe
 
 ### Power and management
 
-- Momentary power press, press-and-hold, cold boot and reset, with confirmation prompts for the destructive actions.
+- Momentary power press, press-and-hold, cold boot and reset, with confirmation prompts for the destructive actions. On Dell, a momentary press powers on an off host and requests a graceful shutdown of a running host; the client reads the power state first if the console has not reported it yet.
 - Live power status in the status bar, and the POST code where the firmware reports one. Dell controllers do not publish a POST code over the console channel, so that field stays empty there.
 - Read the current power state and boot override through the authenticated controller session.
 - Set a verified one-time virtual CD/DVD boot override without power-cycling the server.
@@ -247,6 +247,7 @@ The MCP bridge uses the same translation layer: `ilo_console_type_text` types th
 | HPE ProLiant Gen12 | iLO 7 | V2 or newer | KVM core tested |
 | HPE ProLiant Gen8 / Gen9 | iLO 4 | V1 (legacy) | Expected to work; not yet confirmed |
 | Dell PowerEdge R750 | iDRAC9, firmware 7.10.30.00 and 7.30.30.51 | RFB over WebSocket | Fully tested |
+| Dell PowerEdge R750 | iDRAC9, firmware 7.30.30.54 | RFB over WebSocket | Compatibility rechecked; scope below |
 | Dell PowerEdge 15G / 16G | iDRAC9 | RFB over WebSocket | Expected to work; not yet confirmed |
 | Dell PowerEdge 14G | iDRAC9, older firmware | RFB over WebSocket | Expected to work; not yet confirmed |
 | Dell PowerEdge 12G / 13G | iDRAC7 / iDRAC8 | Unknown | Untested |
@@ -260,6 +261,18 @@ The MCP bridge uses the same translation layer: `ilo_console_type_text` types th
 Both HPE remote-console protocol generations are implemented, so the remaining combinations are expected to work without changes: iLO 4 systems over the legacy V1 path, everything from iLO 5 onwards over the V2-or-newer path.
 
 Firmware 7.30 changed how the iDRAC web session accepts credentials. It stopped reading the two custom headers the older firmware wanted and now expects ordinary HTTP basic authentication, answering `400 Bad Request` with `authResult 99` otherwise. Firstlight sends both forms on every login, so one build works either side of that change. The measurement is in [IDRAC-Wireprotokol.md](IDRAC-Wireprotokol.md).
+
+The **2026-10-18 compatibility recheck** on [iDRAC9 firmware 7.30.30.54](https://www.dell.com/support/home/en-us/drivers/driversdetails?driverid=P3PPC), reporting Redfish 1.20.1, verified:
+
+- Vendor detection, login, console settings and all four endpoint comparisons against the controller's web interface.
+- Console connection, full and incremental Hextile video, keyboard input, mouse movement and refresh.
+- Power-state and boot-override reads, plus the advertised reset types and boot targets used by Firstlight.
+- Virtual-media attachment, firmware recognition, actual ISO-byte delivery and detachment, including the console backend used by the MCP bridge.
+- Repeated console close/reconnect cycles with confirmation that the controller released each console slot.
+
+The recheck exposed a shutdown race: dropping TCP immediately after sending the WebSocket close frame could leave a console slot occupied. Firstlight now waits for the peer's closing handshake, with a bounded timeout, and rejects further data frames after sending Close. Local regression tests cover the handshake and Dell momentary-press behavior; live tests cover slot release and reconnects.
+
+Power changes, boot-override writes, clipboard paste and takeover of another user's console were not re-executed during this firmware recheck. The power and boot checks above validate the advertised API capabilities, not the effects of those operations on a running host.
 
 On the Dell side, every measurement behind the implementation comes from iDRAC9. iDRAC7 and iDRAC8 have never been tried, and the honest answer about them is that nobody here knows. Those generations ship a different console client, but a different client does not necessarily mean a different protocol underneath, and the reverse holds as well. Trying one is cheap and safe: vendor detection reads the unauthenticated Redfish root before any credentials leave the workstation, and a controller that answers differently, or that refuses the console channel, ends up with a failed connection rather than with anything changed on the server. A report either way would be genuinely useful.
 

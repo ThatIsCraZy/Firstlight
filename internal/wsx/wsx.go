@@ -41,8 +41,8 @@ const (
 const MaxMessageSize = 32 << 20
 
 var (
-	// ErrClosed reports that the peer sent a close frame.
-	ErrClosed = errors.New("websocket closed by peer")
+	// ErrClosed reports a closed connection or a write during its closing handshake.
+	ErrClosed = errors.New("websocket closed")
 	// ErrMessageTooLarge reports a message beyond MaxMessageSize.
 	ErrMessageTooLarge = errors.New("websocket message exceeds size limit")
 )
@@ -69,6 +69,9 @@ type Conn struct {
 
 	readMu  sync.Mutex
 	writeMu sync.Mutex
+	// peerClosed is guarded by readMu; sentClose is guarded by writeMu.
+	peerClosed bool
+	sentClose  bool
 
 	// subprotocol is what the server selected, empty when it selected none.
 	subprotocol string
@@ -201,6 +204,9 @@ func (c *Conn) ReadMessage() ([]byte, error) {
 	// A message is several frames, so two callers must not interleave here.
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
+	if c.peerClosed {
+		return nil, ErrClosed
+	}
 	var assembled []byte
 	fragmented := false
 	for {
@@ -216,6 +222,7 @@ func (c *Conn) ReadMessage() ([]byte, error) {
 		case opPong:
 			// Unsolicited pongs are legal and carry no meaning here.
 		case opClose:
+			c.peerClosed = true
 			_ = c.writeFrame(opClose, frame.payload)
 			return nil, closeError(frame.payload)
 		case opText, opBinary:
@@ -252,12 +259,31 @@ func (c *Conn) WriteMessage(payload []byte) error {
 // Ping sends a ping frame with an empty payload.
 func (c *Conn) Ping() error { return c.writeFrame(opPing, nil) }
 
-// Close sends a close frame and tears the connection down.
+// Close completes the WebSocket closing handshake before dropping TCP. The
+// bounded wait lets the peer process preceding commands, such as the iDRAC
+// viewer's leave notification, even if the caller has stopped reading.
 func (c *Conn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
-		_ = c.conn.SetWriteDeadline(time.Now().Add(time.Second))
-		_ = c.writeFrame(opClose, []byte{0x03, 0xe8}) // 1000, normal closure
+		_ = c.conn.SetDeadline(time.Now().Add(time.Second))
+		if c.writeFrame(opClose, []byte{0x03, 0xe8}) == nil { // 1000, normal closure
+			// Cooperate with an existing ReadMessage rather than starting a
+			// competing reader. The deadline also bounds acquiring this lock.
+			c.readMu.Lock()
+			for !c.peerClosed {
+				frame, readErr := c.readFrame()
+				if readErr != nil {
+					break
+				}
+				switch frame.opcode {
+				case opClose:
+					c.peerClosed = true
+				case opPing:
+					_ = c.writeFrame(opPong, frame.payload)
+				}
+			}
+			c.readMu.Unlock()
+		}
 		err = c.conn.Close()
 	})
 	return err
@@ -337,6 +363,17 @@ func (c *Conn) readFrame() (frame, error) {
 func (c *Conn) writeFrame(opcode byte, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.sentClose {
+		if opcode == opClose {
+			return nil // A received close acknowledges the one already sent.
+		}
+		if opcode < opClose {
+			return ErrClosed
+		}
+	}
+	if opcode == opClose {
+		c.sentClose = true
+	}
 	header := make([]byte, 0, 14)
 	header = append(header, 0x80|opcode)
 	n := len(payload)
